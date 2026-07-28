@@ -100,19 +100,19 @@ Notes:
 
 ### Power
 
-Power comes from an **18V tool battery** stepped down to **5V by a buck
-converter**. Size the buck converter for the full load — there are **51 WS2812B
-pixels** (16 + 35), which at full white is roughly 3A at 5V. In normal use the
-7-rings run at 50% and are often off and the 16-ring shows a single colour, so
-real draw is well under that, but a converter rated for at least **5V / 3A**
-leaves comfortable headroom.
+Power comes from an **18V tool battery** (Ryobi ONE+) stepped down to 5V by an
+**LM2596** buck converter. The load is modest — see the budget below — so the
+LM2596 runs well within its 3A rating and stays cool without a heatsink. Its 40V
+input ceiling easily covers the ~21V a fresh pack reaches off the charger. As
+always with the LM2596, set the output to 5.0V before connecting any load.
+
+At 20V→5V the LM2596 (non-synchronous) runs ~75–80% efficient; a synchronous
+module would do ~90%, but with this device's short run times the efficiency
+difference is immaterial.
 
 With the PN532 also on 5V, everything except the ESP32's own logic shares the
 single 5V rail off the buck converter — just tie all grounds together. Power the
 LED rings from that 5V directly rather than through the ESP32's regulator.
-
-The 18V pack can reach ~21V fresh off the charger, so pick a buck converter rated
-for **at least ~21V input** (a 24V-input module is fine) — don't use a 20V-max one.
 
 #### Power budget
 
@@ -129,10 +129,11 @@ tape insert / audio clip every 3–5 minutes:
 | DFR1173 (mostly idle)             | ~30 mA   |
 | **Total**                         | **~0.75 A** (~3.75 W) |
 
-At ~90% buck efficiency the battery sees ~4.2 W. A **Ryobi PBP006 (18V, 2.0Ah ≈
-36 Wh)** therefore runs the system for **~7–8 hours** continuously — the LED rings
-are ~70% of the load, so brightness/blink duty is the main lever if you ever want
-more. These are calculated figures; confirm with a meter in series on the 5V rail.
+At the LM2596's ~78% efficiency the battery sees ~4.8 W. A **Ryobi PBP006 (18V,
+2.0Ah ≈ 36 Wh)** therefore runs the system for **~6.5 hours** continuously — the
+LED rings are ~70% of the load, so brightness/blink duty is the main lever if you
+ever want more. These are calculated figures; confirm with a meter in series on
+the 5V rail.
 
 In practice this device runs **≤45 minutes per round** and batteries are swapped
 between rounds, so runtime is not a constraint and there's no need to dim anything
