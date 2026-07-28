@@ -39,9 +39,9 @@ Continuous background behaviour:
 A cartridge's action fires **exactly once** when it's inserted. The firmware
 tracks presence rather than re-reading blindly:
 
-- The reader is polled every **120 ms** (`POLL_INTERVAL_MS`). Each poll wakes and
-  re-selects the tag, so a tag that's already been read still registers as
-  *present*.
+- The reader is polled every **120 ms** (`POLL_INTERVAL_MS`). The PN532
+  re-detects the tag on every read, so a tag that's already been read still
+  registers as *present*.
 - While the **same** tag stays present, nothing repeats or interrupts — the
   audio and lights are triggered only on the initial read.
 - Momentary read dropouts (the cartridge being **jostled**) are ignored: a tag
@@ -59,7 +59,7 @@ Both timings are tunable near the top of `src/main.cpp`.
 | Component                          | Notes                                      |
 |------------------------------------|--------------------------------------------|
 | ESP32 DevKit                       | Main controller                            |
-| MFRC522 RFID reader (RC522 kit)    | SPI                                        |
+| PN532 NFC reader (e.g. Elechouse V3) | I2C, runs at **5V**                       |
 | 2 status LEDs (red + green)        | Tied to the reader                         |
 | 5 × WS2812B rings, 7 LEDs each      | "Thinking" rings, chained on one data line |
 | 1 × WS2812B ring, 16 LEDs           | Insertion animation ring                   |
@@ -70,11 +70,10 @@ Both timings are tunable near the top of `src/main.cpp`.
 
 | Signal                    | ESP32 GPIO |
 |---------------------------|-----------|
-| RC522 SDA/SS              | 5         |
-| RC522 RST                | 22        |
-| RC522 SCK                | 18 (VSPI) |
-| RC522 MOSI               | 23 (VSPI) |
-| RC522 MISO               | 19 (VSPI) |
+| PN532 SDA                 | 21 (I2C)  |
+| PN532 SCL                 | 22 (I2C)  |
+| PN532 IRQ                 | 32        |
+| PN532 RSTPD_N (reset)     | 33        |
 | Reader green LED          | 25        |
 | Reader red LED            | 26        |
 | 16-LED ring data          | 13        |
@@ -84,7 +83,10 @@ Both timings are tunable near the top of `src/main.cpp`.
 | DFR1173 TX (module → ESP) | 16        |
 
 Notes:
-- RC522 runs at **3.3V** — do not power it from 5V.
+- Set the PN532 board's **mode switches to I2C** (SEL0/SEL1 per the board's silk).
+- The PN532 runs from **5V** on the common breakouts (onboard regulator), and its
+  I2C lines are 5V-tolerant — no level shifter needed. It shares the 5V rail with
+  the LED rings and DFR1173.
 - Put a **~1kΩ resistor** in series between ESP32 TX (GPIO17) and the DFR1173 RX pin.
 - The DFR1173 also exposes a **BUSY** pin (low = playing) if you ever want the ESP32
   to detect playback; it's unused here since audio is fire-and-forget so the light
@@ -98,9 +100,10 @@ Notes:
 
 There are **51 WS2812B pixels** (16 + 35). At full white that's roughly 3A at 5V,
 but in normal use the 7-rings run at 50% and are often off, and the 16-ring shows
-a single colour — so a solid **5V / 2–3A** supply is comfortable. Power the LED
-rings from 5V directly (not through the ESP32's regulator) and tie all grounds
-together.
+a single colour — so a solid **5V / 2–3A** supply is comfortable. With the PN532
+also on 5V, everything except the ESP32's own logic shares a single 5V rail —
+just tie all grounds together. Power the LED rings from 5V directly rather than
+through the ESP32's regulator.
 
 ---
 
@@ -147,8 +150,8 @@ UID: DE AD BE 01
 ```
 
 Insert each tape, read its UID from the monitor, and paste the bytes into the
-matching `KNOWN_TAPES` entry (or `ERROR_TAPE`), then re-flash. The RC522 kit's
-MIFARE Classic cards use 4-byte UIDs (`len = 4`); 7-byte tags are also supported
+matching `KNOWN_TAPES` entry (or `ERROR_TAPE`), then re-flash. MIFARE Classic
+cards use 4-byte UIDs (`len = 4`); 7-byte ISO14443A tags are also supported
 (set `len = 7`).
 
 ---
@@ -163,9 +166,10 @@ pio run -t upload             # flash over USB
 pio device monitor -b 115200  # serial monitor (see UIDs, boot logs)
 ```
 
-Libraries (`miguelbalboa/MFRC522`, `fastled/FastLED`) are pinned in
-[`platformio.ini`](platformio.ini) and fetched automatically on first build. The
-DFR1173 needs no library — it's driven with raw UART command frames.
+Libraries (`adafruit/Adafruit PN532`, `fastled/FastLED`) are pinned in
+[`platformio.ini`](platformio.ini) and fetched automatically on first build
+(Adafruit PN532 pulls in Adafruit BusIO). The DFR1173 needs no library — it's
+driven with raw UART command frames.
 
 ---
 

@@ -2,7 +2,7 @@
 //  RFID Cartridge Player  —  ESP32 firmware  (project: databox)
 // =============================================================================
 //  A cartridge (RFID tape) is inserted into a slot, which presents its tag to
-//  an MFRC522 reader. The tag is classified as:
+//  a PN532 NFC reader. The tag is classified as:
 //     * KNOWN   - one of 10 catalogued tapes, each with its own audio track.
 //                 Reader GREEN LED on. 16-ring settles on BLUE.
 //     * ERROR   - the single "bad" tape. Reader RED LED on. 16-ring settles RED.
@@ -26,8 +26,8 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <SPI.h>
-#include <MFRC522.h>
+#include <Wire.h>
+#include <Adafruit_PN532.h>
 #include <FastLED.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -35,9 +35,13 @@
 // -----------------------------------------------------------------------------
 //  Pin map  (ESP32 DevKit)
 // -----------------------------------------------------------------------------
-// MFRC522 (SPI) -- SCK=18, MISO=19, MOSI=23 are the hardware VSPI pins.
-#define PIN_RC522_SS     5
-#define PIN_RC522_RST    22
+// PN532 NFC reader (I2C). Runs from 5V on common breakouts (Elechouse V3 etc.),
+// so the whole build can share one 5V rail. SDA=21/SCL=22 are the ESP32's
+// default I2C pins. Set the board's mode switches to I2C.
+#define PIN_PN532_SDA    21
+#define PIN_PN532_SCL    22
+#define PIN_PN532_IRQ    32
+#define PIN_PN532_RST    33
 
 // Reader status LEDs
 #define PIN_LED_GREEN    25
@@ -73,8 +77,9 @@ static const uint16_t TRACK_ERROR   = 11;   // error sound
 static const uint16_t TRACK_UNKNOWN = 12;   // fallback "unknown tape" sound
 
 // Presence / debounce tuning.
-static const uint32_t POLL_INTERVAL_MS   = 120;  // how often presence is checked
-static const uint32_t ABSENT_DEBOUNCE_MS = 400;  // must be gone this long = removed
+static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
+static const uint32_t ABSENT_DEBOUNCE_MS    = 400; // must be gone this long = removed
+static const uint16_t PN532_READ_TIMEOUT_MS = 50;  // per-poll blocking read cap
 
 // Tape UID tables --------------------------------------------------------------
 // Replace the placeholder UIDs below with real ones. Every scan is printed to
@@ -127,7 +132,7 @@ static const CRGB COLOR_WHITE   = CRGB(255, 255, 255);
 // -----------------------------------------------------------------------------
 //  Globals
 // -----------------------------------------------------------------------------
-MFRC522        rfid(PIN_RC522_SS, PIN_RC522_RST);
+Adafruit_PN532 nfc(PIN_PN532_IRQ, PIN_PN532_RST);
 HardwareSerial dfSerial(2);
 
 enum TapeClass { CLASS_KNOWN, CLASS_UNKNOWN, CLASS_ERROR };
@@ -329,26 +334,22 @@ static void handleRemoval() {
 // -----------------------------------------------------------------------------
 //  RFID presence read
 // -----------------------------------------------------------------------------
-// Detects a tag whether it is idle OR previously halted (via WakeupA), reads
-// its UID, then halts it again to keep the bus quiet until the next poll.
+// The PN532 re-detects a card on every call, so while a cartridge sits in the
+// field this keeps returning its UID — exactly what the presence model wants.
+// The short timeout stops empty polls from stalling the light animations.
 // Returns true and fills uid/len when a tag is read.
 static bool tryReadUid(uint8_t* uid, uint8_t* len) {
-    byte atqa[2];
-    byte atqaSize = sizeof(atqa);
+    uint8_t buf[7] = {0};                 // ISO14443A UIDs are 4 or 7 bytes
+    uint8_t uidLen = 0;
 
-    MFRC522::StatusCode s = rfid.PICC_WakeupA(atqa, &atqaSize);
-    if (s != MFRC522::STATUS_OK && s != MFRC522::STATUS_COLLISION) return false;
-
-    if (!rfid.PICC_ReadCardSerial()) {   // runs anticollision + SELECT
-        rfid.PICC_HaltA();
+    if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, buf, &uidLen,
+                                 PN532_READ_TIMEOUT_MS)) {
         return false;
     }
+    if (uidLen == 0 || uidLen > sizeof(buf)) return false;
 
-    *len = rfid.uid.size;
-    memcpy(uid, rfid.uid.uidByte, rfid.uid.size);
-
-    rfid.PICC_HaltA();
-    rfid.PCD_StopCrypto1();
+    memcpy(uid, buf, uidLen);
+    *len = uidLen;
     return true;
 }
 
@@ -399,12 +400,17 @@ void setup() {
         thinkNextToggle[r] = millis() + random(0, 400);
     }
 
-    // RFID.
-    SPI.begin();
-    rfid.PCD_Init();
-    delay(50);
-    Serial.print("RC522 firmware: ");
-    rfid.PCD_DumpVersionToSerial();
+    // PN532 NFC reader (I2C).
+    Wire.begin(PIN_PN532_SDA, PIN_PN532_SCL);
+    nfc.begin();
+    uint32_t ver = nfc.getFirmwareVersion();
+    if (!ver) {
+        Serial.println("PN532: NOT found (check I2C wiring / mode switch).");
+    } else {
+        Serial.printf("PN532: found, firmware %d.%d\n",
+                      (int)((ver >> 16) & 0xFF), (int)((ver >> 8) & 0xFF));
+    }
+    nfc.SAMConfig();   // required before reading passive targets
 
     // DFR1173 voice module.
     dfSerial.begin(9600, SERIAL_8N1, PIN_DF_RX, PIN_DF_TX);
