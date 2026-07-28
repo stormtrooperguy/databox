@@ -111,6 +111,33 @@ With the PN532 also on 5V, everything except the ESP32's own logic shares the
 single 5V rail off the buck converter — just tie all grounds together. Power the
 LED rings from that 5V directly rather than through the ESP32's regulator.
 
+The 18V pack can reach ~21V fresh off the charger, so pick a buck converter rated
+for **at least ~21V input** (a 24V-input module is fine) — don't use a 20V-max one.
+
+#### Power budget
+
+Estimated average draw on the 5V rail with the LEDs animating constantly and a
+tape insert / audio clip every 3–5 minutes:
+
+| Load                              | Avg @ 5V |
+|-----------------------------------|----------|
+| ESP32 + WiFi (connected)          | ~120 mA  |
+| 5× 7-LED "thinking" rings (50%)   | ~430 mA  |
+| 16-LED ring                       | ~100 mA  |
+| 3 white LEDs                      | ~25 mA   |
+| PN532 (polling)                   | ~50 mA   |
+| DFR1173 (mostly idle)             | ~30 mA   |
+| **Total**                         | **~0.75 A** (~3.75 W) |
+
+At ~90% buck efficiency the battery sees ~4.2 W. A **Ryobi PBP006 (18V, 2.0Ah ≈
+36 Wh)** therefore runs the system for **~7–8 hours** continuously — the LED rings
+are ~70% of the load, so brightness/blink duty is the main lever if you ever want
+more. These are calculated figures; confirm with a meter in series on the 5V rail.
+
+In practice this device runs **≤45 minutes per round** and batteries are swapped
+between rounds, so runtime is not a constraint and there's no need to dim anything
+for battery's sake.
+
 ---
 
 ## Audio files
