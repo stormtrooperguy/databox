@@ -91,19 +91,25 @@ Notes:
 - The DFR1173 also exposes a **BUSY** pin (low = playing) if you ever want the ESP32
   to detect playback; it's unused here since audio is fire-and-forget so the light
   animations keep running.
-- Drive the 3 white LEDs (and any LED drawing real current) through a
-  **transistor/MOSFET** on GPIO14 rather than directly off the pin.
+- The 3 white LEDs are **pre-wired modules with built-in resistors rated for 9V**.
+  They're driven at 5V here (tested — they light fine, just a little dimmer), so no
+  extra series resistor is needed. Still switch them through a **transistor/MOSFET**
+  on GPIO14 rather than sourcing them off the pin directly.
 - Add the usual WS2812B protections: a **~470Ω** resistor in the data line and a
   **1000µF** cap across the strip's 5V/GND.
 
 ### Power
 
-There are **51 WS2812B pixels** (16 + 35). At full white that's roughly 3A at 5V,
-but in normal use the 7-rings run at 50% and are often off, and the 16-ring shows
-a single colour — so a solid **5V / 2–3A** supply is comfortable. With the PN532
-also on 5V, everything except the ESP32's own logic shares a single 5V rail —
-just tie all grounds together. Power the LED rings from 5V directly rather than
-through the ESP32's regulator.
+Power comes from an **18V tool battery** stepped down to **5V by a buck
+converter**. Size the buck converter for the full load — there are **51 WS2812B
+pixels** (16 + 35), which at full white is roughly 3A at 5V. In normal use the
+7-rings run at 50% and are often off and the 16-ring shows a single colour, so
+real draw is well under that, but a converter rated for at least **5V / 3A**
+leaves comfortable headroom.
+
+With the PN532 also on 5V, everything except the ESP32's own logic shares the
+single 5V rail off the buck converter — just tie all grounds together. Power the
+LED rings from that 5V directly rather than through the ESP32's regulator.
 
 ---
 
