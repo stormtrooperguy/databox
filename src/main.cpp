@@ -31,6 +31,7 @@
 #include <FastLED.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include "secrets.h"   // WIFI_SSID / WIFI_PASSWORD — git-ignored (see secrets.h.example)
 
 // -----------------------------------------------------------------------------
 //  Pin map  (ESP32 DevKit)
@@ -61,9 +62,14 @@
 // -----------------------------------------------------------------------------
 //  User configuration
 // -----------------------------------------------------------------------------
-// WiFi — placeholders, fill in later.
-static const char* WIFI_SSID     = "YOUR_SSID";
-static const char* WIFI_PASSWORD = "YOUR_PASSWORD";
+// WiFi credentials live in src/secrets.h (git-ignored). WIFI_SSID and
+// WIFI_PASSWORD are #defined there — copy secrets.h.example to secrets.h to set them.
+
+// Static IP for this unit on the venue network (192.168.50.0/24).
+static const IPAddress STATIC_IP  (192, 168, 50, 10);
+static const IPAddress GATEWAY    (192, 168, 50,  1);
+static const IPAddress SUBNET     (255, 255, 255, 0);
+static const IPAddress DNS_SERVER (192, 168, 50,  1);
 
 // Remote API — endpoint to be added later. Leave empty to disable reporting.
 static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
@@ -359,6 +365,9 @@ static bool tryReadUid(uint8_t* uid, uint8_t* len) {
 static void connectWifi() {
     Serial.printf("WiFi: connecting to \"%s\" ...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
+    if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER)) {
+        Serial.println("WiFi: static IP config failed!");
+    }
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     unsigned long start = millis();

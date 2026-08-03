@@ -166,13 +166,34 @@ Track numbers are configurable near the top of `src/main.cpp`
 
 ## Configuration
 
-All user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
+Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 
-- **WiFi** — `WIFI_SSID` / `WIFI_PASSWORD` (placeholders for now).
 - **API** — `API_URL`. Leave `""` to disable reporting; set it later to POST a
   JSON body `{"uid","class","track"}` on each scan.
 - **Volume** — `AUDIO_VOLUME` (0–30).
 - **Tape UIDs** — `KNOWN_TAPES[]` (10 entries) and `ERROR_TAPE`.
+- **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue
+  network: `STATIC_IP` = `192.168.50.10`, `GATEWAY`/`DNS_SERVER` = `192.168.50.1`,
+  `SUBNET` = `255.255.255.0`. Adjust if the router isn't at `.1`.
+
+### WiFi credentials (`secrets.h`)
+
+WiFi credentials are **not** committed. They live in `src/secrets.h`, which is
+git-ignored. Before the first build, copy the template and fill in real values:
+
+```bash
+cp src/secrets.h.example src/secrets.h
+```
+
+Then edit `src/secrets.h`:
+
+```c
+#define WIFI_SSID     "CSL_aurora"
+#define WIFI_PASSWORD "sammie2022"
+```
+
+`src/main.cpp` includes `secrets.h`, so the build will fail if the file is
+missing — that's the reminder to create it on a fresh checkout.
 
 ### Programming the tape UIDs
 
