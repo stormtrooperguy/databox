@@ -98,7 +98,7 @@ struct TapeEntry {
 
 // The 10 catalogued "good" tapes -> tracks 1..10.
 static const TapeEntry KNOWN_TAPES[] = {
-    { 4, {0xDE, 0xAD, 0xBE, 0x01}, 1  },
+    { 7, {0x04, 0x7E, 0x26, 0x5B, 0xC1, 0x2A, 0x81}, 1  },
     { 4, {0xDE, 0xAD, 0xBE, 0x02}, 2  },
     { 4, {0xDE, 0xAD, 0xBE, 0x03}, 3  },
     { 4, {0xDE, 0xAD, 0xBE, 0x04}, 4  },
@@ -315,6 +315,11 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
 
     uint16_t track = 0;
     TapeClass cls = classifyTape(uid, len, track);
+
+    const char* clsName = (cls == CLASS_KNOWN) ? "KNOWN"
+                        : (cls == CLASS_ERROR) ? "ERROR"
+                                               : "UNKNOWN";
+    Serial.printf("  -> %s (track %u)\n", clsName, track);
 
     CRGB finalColor;
     switch (cls) {
