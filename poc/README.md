@@ -13,13 +13,16 @@ wired connection between the two devices.
 - Drives a single **16-LED WS2812B ring** on **GPIO13** (no other hardware).
 - Exposes three HTTP endpoints (**GET or POST**):
 
-  | Endpoint   | Effect                                        |
-  |------------|-----------------------------------------------|
-  | `/known`   | LEDs pulse through shades of blue             |
-  | `/unknown` | Flash red 6 times, then hold solid red        |
-  | `/off`     | LEDs off                                      |
+  | Endpoint   | Effect                                             |
+  |------------|----------------------------------------------------|
+  | `/known`   | LEDs pulse through shades of blue                  |
+  | `/unknown` | Flash red 6 times, then hold solid red             |
+  | `/off`     | Return to idle — LEDs pulse through orange/yellow  |
 
-- Starts up with the **LEDs off**.
+- Starts up in **idle** (pulsing orange/yellow). `/off` is the "return to
+  default" signal; the default is now the idle glow rather than dark. (Kept the
+  `/off` name so the reader doesn't need re-flashing — will be revisited for
+  production.)
 
 ## Design note (from Springtrap)
 

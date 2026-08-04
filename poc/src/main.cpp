@@ -14,8 +14,8 @@
 //    - Exposes three HTTP endpoints (GET or POST):
 //        /known    -> LEDs pulse through shades of blue
 //        /unknown  -> flash red 6 times, then hold solid red
-//        /off      -> LEDs off
-//    - Starts up with the LEDs off.
+//        /off      -> return to idle (LEDs pulse through orange/yellow)
+//    - Starts up in idle (pulsing orange/yellow).
 //
 //  Springtrap lesson: the async HTTP handlers NEVER touch FastLED. They just
 //  enqueue the requested mode; loop() drains the queue and owns every LED op,
@@ -48,8 +48,8 @@ AsyncWebServer server(80);
 // -----------------------------------------------------------------------------
 //  Modes
 // -----------------------------------------------------------------------------
-enum Mode { MODE_OFF, MODE_KNOWN, MODE_UNKNOWN };
-static Mode currentMode = MODE_OFF;
+enum Mode { MODE_IDLE, MODE_KNOWN, MODE_UNKNOWN };
+static Mode currentMode = MODE_IDLE;
 
 // HTTP handlers (async task) enqueue a mode; loop() applies it.
 static QueueHandle_t modeQueue = NULL;
@@ -68,11 +68,9 @@ static uint32_t unkLast     = 0;
 static void applyMode(Mode m) {
     currentMode = m;
     switch (m) {
-        case MODE_OFF:
-            fill_solid(ring, NUM_LEDS, CRGB::Black);
-            FastLED.show();
-            Serial.println("Mode: OFF");
-            break;
+        case MODE_IDLE:
+            Serial.println("Mode: IDLE (pulsing orange/yellow)");
+            break;   // animated continuously in updateIdle()
         case MODE_KNOWN:
             Serial.println("Mode: KNOWN (pulsing blue)");
             break;   // animated continuously in updateKnown()
@@ -86,6 +84,15 @@ static void applyMode(Mode m) {
             Serial.println("Mode: UNKNOWN (flash x6 then solid red)");
             break;
     }
+}
+
+static void updateIdle() {
+    // Gentle idle lantern glow: hue drifts orange -> yellow while brightness
+    // breathes slowly.
+    uint8_t v = beatsin8(20, 25, 170);    // slow, moderate brightness
+    uint8_t h = beatsin8(10, 24, 64);     // orange (24) -> yellow (64)
+    fill_solid(ring, NUM_LEDS, CHSV(h, 255, v));
+    FastLED.show();
 }
 
 static void updateKnown() {
@@ -131,7 +138,7 @@ static void setupWebServer() {
         req->send(200, "text/plain", "unknown");
     });
     server.on("/off", HTTP_ANY, [](AsyncWebServerRequest *req) {
-        queueMode(MODE_OFF);
+        queueMode(MODE_IDLE);   // "off" endpoint returns to the idle glow
         req->send(200, "text/plain", "off");
     });
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -154,7 +161,7 @@ void setup() {
 
     FastLED.addLeds<WS2812B, PIN_RING16, GRB>(ring, NUM_LEDS);
     FastLED.setBrightness(255);
-    fill_solid(ring, NUM_LEDS, CRGB::Black);   // LEDs off at startup
+    fill_solid(ring, NUM_LEDS, CRGB::Black);   // idle glow takes over in loop()
     FastLED.show();
 
     modeQueue = xQueueCreate(8, sizeof(Mode));
@@ -176,7 +183,7 @@ void loop() {
     switch (currentMode) {
         case MODE_KNOWN:   updateKnown();   break;
         case MODE_UNKNOWN: updateUnknown(); break;
-        case MODE_OFF:     break;
+        case MODE_IDLE:    updateIdle();    break;
     }
     delay(5);
 }

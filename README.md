@@ -236,7 +236,7 @@ driven with raw UART command frames.
 [`poc/`](poc/) is a separate ESP32 sketch used during testing to demonstrate the
 reader driving an external object **wirelessly**. It hosts the `CSL_aurora` AP
 at `192.168.50.1` and drives a 16-LED ring: pulsing blue on `/known`, red flashes
-then solid red on `/unknown`, off on `/off`. The reader reaches it because it
+then solid red on `/unknown`, idle orange/yellow glow on `/off`. The reader reaches it because it
 joins that AP (the AP is the reader's configured gateway). It's a sample/demo,
 not part of the shipping device — see [`poc/README.md`](poc/README.md).
 
