@@ -44,9 +44,9 @@
 #define PIN_PN532_IRQ    32
 #define PIN_PN532_RST    33
 
-// Reader status LEDs
-#define PIN_LED_GREEN    25
-#define PIN_LED_RED      26
+// Reader status LEDs (pins transposed to match the as-built wiring)
+#define PIN_LED_GREEN    26
+#define PIN_LED_RED      25
 
 // WS2812B data lines
 #define PIN_RING16       13    // the single 16-LED ring
@@ -324,7 +324,7 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     CRGB finalColor;
     switch (cls) {
         case CLASS_KNOWN:   finalColor = COLOR_KNOWN;   setReaderLeds(true,  false); break;
-        case CLASS_UNKNOWN: finalColor = COLOR_UNKNOWN; setReaderLeds(true,  false); break;
+        case CLASS_UNKNOWN: finalColor = COLOR_UNKNOWN; setReaderLeds(false, true);  break;
         case CLASS_ERROR:   finalColor = COLOR_ERROR;   setReaderLeds(false, true);  break;
     }
 

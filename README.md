@@ -16,7 +16,7 @@ When a cartridge is inserted, its RFID tag is read and classified:
 |-------------|---------------------------------------------|------------|----------------|------------------|
 | **Known**   | UID matches one of the 10 catalogued tapes  | Green      | Blue           | Track 1 (known)  |
 | **Error**   | UID matches the single "bad" tape           | Red        | Red            | Track 2 (other)  |
-| **Unknown** | Any other UID (fallback)                     | Green      | Yellow/amber   | Track 2 (other)  |
+| **Unknown** | Any other UID (fallback)                     | Red        | Yellow/amber   | Track 2 (other)  |
 
 Sequence on every insertion:
 
@@ -74,8 +74,8 @@ Both timings are tunable near the top of `src/main.cpp`.
 | PN532 SCL                 | 22 (I2C)  |
 | PN532 IRQ                 | 32        |
 | PN532 RSTPD_N (reset)     | 33        |
-| Reader green LED          | 25        |
-| Reader red LED            | 26        |
+| Reader green LED          | 26        |
+| Reader red LED            | 25        |
 | 16-LED ring data          | 13        |
 | 5 × 7-LED rings data       | 4         |
 | 3 white LEDs (gate)       | 14        |
