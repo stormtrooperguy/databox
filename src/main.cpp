@@ -75,6 +75,11 @@ static const IPAddress DNS_SERVER (192, 168, 50,  1);
 // Remote API — endpoint to be added later. Leave empty to disable reporting.
 static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
 
+// POC receiver (see poc/): the databox drives that device's 16-LED ring over
+// WiFi by hitting /known, /unknown, /off. It hosts the AP at this address,
+// which is also our configured gateway. Leave empty to disable.
+static const char* RECEIVER_BASE_URL = "http://192.168.50.1";
+
 // DFR1173 volume (0-30)
 static const uint8_t AUDIO_VOLUME = 30;   // max
 
@@ -307,6 +312,21 @@ static void reportScan(TapeClass cls, uint16_t track, const uint8_t* uid, uint8_
     http.end();
 }
 
+// Fire-and-forget hit to a POC receiver endpoint ("/known", "/unknown", "/off").
+static void notifyReceiver(const char* path) {
+    if (strlen(RECEIVER_BASE_URL) == 0) return;
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    HTTPClient http;
+    String url = String(RECEIVER_BASE_URL) + path;
+    http.begin(url);
+    http.setConnectTimeout(800);   // don't stall long if the receiver is absent
+    http.setTimeout(800);
+    int code = http.POST("");
+    Serial.printf("POC %s -> %d\n", path, code);
+    http.end();
+}
+
 // -----------------------------------------------------------------------------
 //  Handle a freshly inserted cartridge (fires once per insertion)
 // -----------------------------------------------------------------------------
@@ -336,6 +356,8 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     setReaderLeds(ledGreen, ledRed);
     audioPlayTrack(track);
 
+    // Drive the POC receiver: /known for a good tape, /unknown for anything else.
+    notifyReceiver(cls == CLASS_KNOWN ? "/known" : "/unknown");
     reportScan(cls, track, uid, len);
 }
 
@@ -343,6 +365,7 @@ static void handleRemoval() {
     setReaderLeds(false, false);
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
     FastLED.show();
+    notifyReceiver("/off");
     Serial.println("Cartridge removed.");
 }
 

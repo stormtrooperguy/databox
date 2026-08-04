@@ -170,6 +170,9 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 
 - **API** — `API_URL`. Leave `""` to disable reporting; set it later to POST a
   JSON body `{"uid","class","track"}` on each scan.
+- **POC receiver** — `RECEIVER_BASE_URL` (default `http://192.168.50.1`). On each
+  scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
+  `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
 - **Volume** — `AUDIO_VOLUME` (0–30; currently 30 = max).
 - **Tape UIDs** — `KNOWN_TAPES[]` (10 entries) and `ERROR_TAPE`.
 - **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue
@@ -228,9 +231,22 @@ driven with raw UART command frames.
 
 ---
 
+## POC receiver (`poc/`)
+
+[`poc/`](poc/) is a separate ESP32 sketch used during testing to demonstrate the
+reader driving an external object **wirelessly**. It hosts the `CSL_aurora` AP
+at `192.168.50.1` and drives a 16-LED ring: pulsing blue on `/known`, red flashes
+then solid red on `/unknown`, off on `/off`. The reader reaches it because it
+joins that AP (the AP is the reader's configured gateway). It's a sample/demo,
+not part of the shipping device — see [`poc/README.md`](poc/README.md).
+
+---
+
 ## Roadmap
 
-- [ ] Real WiFi credentials.
-- [ ] Wire up the remote API endpoint (`API_URL`) and payload schema.
-- [ ] Replace placeholder UIDs with the 10 known tapes + the error tape.
-- [ ] Final audio assets on the SD card.
+- [x] WiFi credentials (`secrets.h`) + static IP.
+- [x] Two-track audio, max volume.
+- [x] POC receiver demo (`poc/`) driven over WiFi.
+- [ ] Wire up the real remote API endpoint (`API_URL`) and payload schema.
+- [ ] Catalog the remaining known tapes (only the one good tape is entered;
+      everything else is treated as "bad").
