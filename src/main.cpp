@@ -75,12 +75,13 @@ static const IPAddress DNS_SERVER (192, 168, 50,  1);
 static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
 
 // DFR1173 volume (0-30)
-static const uint8_t AUDIO_VOLUME = 25;
+static const uint8_t AUDIO_VOLUME = 30;   // max
 
-// Audio tracks. The DFR1173 plays a track by its index number (the order files
-// were copied onto the module's internal storage). See README.
-static const uint16_t TRACK_ERROR   = 11;   // error sound
-static const uint16_t TRACK_UNKNOWN = 12;   // fallback "unknown tape" sound
+// Audio tracks. Only two: track 1 for a known tape, track 2 for anything else
+// (unknown or the error tape). The DFR1173 plays by index number (the order
+// files were copied onto its internal storage). See README.
+static const uint16_t TRACK_KNOWN = 1;   // known tape
+static const uint16_t TRACK_OTHER = 2;   // unknown or error tape
 
 // Presence / debounce tuning.
 static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
@@ -91,28 +92,27 @@ static const uint16_t PN532_READ_TIMEOUT_MS = 50;  // per-poll blocking read cap
 // Replace the placeholder UIDs below with real ones. Every scan is printed to
 // the serial monitor as "UID: xx xx xx xx" — copy those bytes in here.
 struct TapeEntry {
-    uint8_t  len;          // UID length in bytes (4 for the RC522 kit's MIFARE Classic)
-    uint8_t  uid[10];      // UID bytes
-    uint16_t track;        // audio track to play
+    uint8_t len;       // UID length in bytes (4 or 7 for ISO14443A tags)
+    uint8_t uid[10];   // UID bytes
 };
 
-// The 10 catalogued "good" tapes -> tracks 1..10.
+// The 10 catalogued "good" tapes. All play TRACK_KNOWN.
 static const TapeEntry KNOWN_TAPES[] = {
-    { 7, {0x04, 0x7E, 0x26, 0x5B, 0xC1, 0x2A, 0x81}, 1  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x02}, 2  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x03}, 3  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x04}, 4  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x05}, 5  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x06}, 6  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x07}, 7  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x08}, 8  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x09}, 9  },
-    { 4, {0xDE, 0xAD, 0xBE, 0x0A}, 10 },
+    { 7, {0x04, 0x7E, 0x26, 0x5B, 0xC1, 0x2A, 0x81} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x02} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x03} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x04} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x05} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x06} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x07} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x08} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x09} },
+    { 4, {0xDE, 0xAD, 0xBE, 0x0A} },
 };
 static const size_t KNOWN_TAPE_COUNT = sizeof(KNOWN_TAPES) / sizeof(KNOWN_TAPES[0]);
 
-// The single "error" tape.
-static const TapeEntry ERROR_TAPE = { 4, {0xBA, 0xDB, 0xAD, 0x00}, TRACK_ERROR };
+// The single "error" tape (distinct lights, but plays TRACK_OTHER like unknowns).
+static const TapeEntry ERROR_TAPE = { 4, {0xBA, 0xDB, 0xAD, 0x00} };
 
 // -----------------------------------------------------------------------------
 //  LED layout
@@ -261,16 +261,16 @@ static bool sameUid(const uint8_t* a, uint8_t alen, const uint8_t* b, uint8_t bl
 
 static TapeClass classifyTape(const uint8_t* uid, uint8_t len, uint16_t& trackOut) {
     if (uidMatches(ERROR_TAPE, uid, len)) {
-        trackOut = ERROR_TAPE.track;
+        trackOut = TRACK_OTHER;
         return CLASS_ERROR;
     }
     for (size_t i = 0; i < KNOWN_TAPE_COUNT; i++) {
         if (uidMatches(KNOWN_TAPES[i], uid, len)) {
-            trackOut = KNOWN_TAPES[i].track;
+            trackOut = TRACK_KNOWN;
             return CLASS_KNOWN;
         }
     }
-    trackOut = TRACK_UNKNOWN;
+    trackOut = TRACK_OTHER;
     return CLASS_UNKNOWN;
 }
 

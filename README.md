@@ -12,11 +12,11 @@ Built with **PlatformIO**.
 
 When a cartridge is inserted, its RFID tag is read and classified:
 
-| Class       | How it's decided                            | Reader LED | 16-ring colour | Audio               |
-|-------------|---------------------------------------------|------------|----------------|---------------------|
-| **Known**   | UID matches one of the 10 catalogued tapes  | Green      | Blue           | That tape's track   |
-| **Error**   | UID matches the single "bad" tape           | Red        | Red            | Error sound         |
-| **Unknown** | Any other UID (fallback)                     | Green      | Yellow/amber   | "Unknown" sound     |
+| Class       | How it's decided                            | Reader LED | 16-ring colour | Audio            |
+|-------------|---------------------------------------------|------------|----------------|------------------|
+| **Known**   | UID matches one of the 10 catalogued tapes  | Green      | Blue           | Track 1 (known)  |
+| **Error**   | UID matches the single "bad" tape           | Red        | Red            | Track 2 (other)  |
+| **Unknown** | Any other UID (fallback)                     | Green      | Yellow/amber   | Track 2 (other)  |
 
 Sequence on every insertion:
 
@@ -145,22 +145,21 @@ for battery's sake.
 
 The DFR1173 has **16MB of internal storage** (no SD card). Connect it to your
 computer over USB and copy the audio files on. The module plays a track by its
-**index number** — the order the files were copied — so copy them **one at a
-time, in order**:
+**index number** — the order the files were copied — so copy them **in order**.
+There are just **two tracks**:
 
-| Copy order (track #) | Purpose                     |
-|----------------------|-----------------------------|
-| 1–10                 | The 10 known tapes' tracks  |
-| 11                   | Error sound                 |
-| 12                   | Unknown-tape sound          |
+| Copy order (track #) | Purpose                                  |
+|----------------------|------------------------------------------|
+| 1                    | Known tape                               |
+| 2                    | Anything else (unknown *and* error tape) |
 
-Naming the files with a numeric prefix (e.g. `01_intro.mp3`, `02_...`) and
+Naming the files with a numeric prefix (e.g. `01_known.mp3`, `02_other.mp3`) and
 copying them in that order keeps the index predictable. MP3/WAV/WMA are
 supported. The firmware sends the raw serial "play track N" command
-(`0x7E 0x03 … 0xEF`); no library is needed.
+(`0x7E 0x03 … 0xEF`); no library is needed. Volume is set to max (30) at boot.
 
 Track numbers are configurable near the top of `src/main.cpp`
-(`TRACK_ERROR`, `TRACK_UNKNOWN`, and the `track` field of each `KNOWN_TAPES` entry).
+(`TRACK_KNOWN`, `TRACK_OTHER`).
 
 ---
 
@@ -170,7 +169,7 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 
 - **API** — `API_URL`. Leave `""` to disable reporting; set it later to POST a
   JSON body `{"uid","class","track"}` on each scan.
-- **Volume** — `AUDIO_VOLUME` (0–30).
+- **Volume** — `AUDIO_VOLUME` (0–30; currently 30 = max).
 - **Tape UIDs** — `KNOWN_TAPES[]` (10 entries) and `ERROR_TAPE`.
 - **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue
   network: `STATIC_IP` = `192.168.50.10`, `GATEWAY`/`DNS_SERVER` = `192.168.50.1`,
