@@ -3,14 +3,15 @@
 // =============================================================================
 //  A cartridge (RFID tape) is inserted into a slot, which presents its tag to
 //  a PN532 NFC reader. The tag is classified as:
-//     * KNOWN   - one of 10 catalogued tapes, each with its own audio track.
-//                 Reader GREEN LED on. 16-ring settles on BLUE.
-//     * ERROR   - the single "bad" tape. Reader RED LED on. 16-ring settles RED.
-//     * UNKNOWN - fallback for any other tag. Reader GREEN LED on. 16-ring YELLOW.
+//     * KNOWN   - one of 10 catalogued tapes. Reader GREEN LED, 16-ring BLUE,
+//                 plays the "known" track.
+//     * ERROR   - the single "bad" tape. Reader RED LED, 16-ring RED, "other" track.
+//     * UNKNOWN - fallback for any other tag. Reader RED LED, 16-ring RED, "other" track.
 //
-//  On insertion the 16-LED ring runs a 1s white chase, flashes white twice,
-//  then holds its class colour. Once that animation finishes, the matching
-//  audio track plays on the DFRobot DFR1173 voice module.
+//  On insertion the 16-LED ring runs a 2s white chase, flashes white twice,
+//  then holds its class colour (blue = good, red = not good). Once the ring
+//  settles, the reader LED lights and the matching audio track plays on the
+//  DFRobot DFR1173 voice module.
 //
 //  Cartridge presence model:
 //    - A tag is read once on insertion and its action fires exactly once.
@@ -129,10 +130,9 @@ static CRGB rings7[RINGS7_COUNT];
 static const CRGB THINK_ON  = CRGB(128, 128, 128);
 static const CRGB THINK_OFF = CRGB::Black;
 
-// 16-ring class colours.
-static const CRGB COLOR_KNOWN   = CRGB(0,   0,   255);   // blue
-static const CRGB COLOR_UNKNOWN = CRGB(255, 140, 0);     // yellow/amber
-static const CRGB COLOR_ERROR   = CRGB(255, 0,   0);     // red
+// 16-ring class colours: blue for good, red for not good.
+static const CRGB COLOR_KNOWN   = CRGB(0,   0,   255);   // blue  (good)
+static const CRGB COLOR_ERROR   = CRGB(255, 0,   0);     // red   (not good)
 static const CRGB COLOR_WHITE   = CRGB(255, 255, 255);
 
 // -----------------------------------------------------------------------------
@@ -212,8 +212,8 @@ static void setReaderLeds(bool green, bool red) {
 //  16-ring insertion animation: 1s chase -> 2 white flashes -> steady colour
 // -----------------------------------------------------------------------------
 static void playInsertionAnimation(CRGB finalColor) {
-    // --- 1 second white comet chase ---
-    const uint32_t CHASE_MS = 1000;
+    // --- 2 second white comet chase ---
+    const uint32_t CHASE_MS = 2000;
     const uint32_t STEP_MS  = 45;
     uint32_t start = millis();
     int head = 0;
@@ -322,14 +322,18 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     Serial.printf("  -> %s (track %u)\n", clsName, track);
 
     CRGB finalColor;
+    bool ledGreen = false, ledRed = false;
     switch (cls) {
-        case CLASS_KNOWN:   finalColor = COLOR_KNOWN;   setReaderLeds(true,  false); break;
-        case CLASS_UNKNOWN: finalColor = COLOR_UNKNOWN; setReaderLeds(false, true);  break;
-        case CLASS_ERROR:   finalColor = COLOR_ERROR;   setReaderLeds(false, true);  break;
+        case CLASS_KNOWN:   finalColor = COLOR_KNOWN; ledGreen = true;  ledRed = false; break;
+        case CLASS_UNKNOWN: finalColor = COLOR_ERROR; ledGreen = false; ledRed = true;  break;
+        case CLASS_ERROR:   finalColor = COLOR_ERROR; ledGreen = false; ledRed = true;  break;
     }
 
-    // Ring animation first; audio starts only after it completes.
+    // Reader LEDs stay dark during the ring animation, then light once the ring
+    // settles on its final colour; audio follows.
+    setReaderLeds(false, false);
     playInsertionAnimation(finalColor);
+    setReaderLeds(ledGreen, ledRed);
     audioPlayTrack(track);
 
     reportScan(cls, track, uid, len);

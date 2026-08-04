@@ -16,14 +16,15 @@ When a cartridge is inserted, its RFID tag is read and classified:
 |-------------|---------------------------------------------|------------|----------------|------------------|
 | **Known**   | UID matches one of the 10 catalogued tapes  | Green      | Blue           | Track 1 (known)  |
 | **Error**   | UID matches the single "bad" tape           | Red        | Red            | Track 2 (other)  |
-| **Unknown** | Any other UID (fallback)                     | Red        | Yellow/amber   | Track 2 (other)  |
+| **Unknown** | Any other UID (fallback)                     | Red        | Red            | Track 2 (other)  |
 
 Sequence on every insertion:
 
-1. The **16-LED ring** runs a white comet **chase for 1 second**.
+1. The **16-LED ring** runs a white comet **chase for 2 seconds**.
 2. It **flashes white twice**.
-3. It **holds steady** on the class colour (blue / yellow / red).
-4. Once the ring animation finishes, the **matching audio track plays**.
+3. It **holds steady** on the class colour: **blue** (good) or **red** (not good).
+4. Once the ring settles, the **reader LED lights** (green/red) and the
+   **matching audio track plays**.
 
 Continuous background behaviour:
 
