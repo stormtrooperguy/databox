@@ -93,7 +93,10 @@ static const uint16_t TRACK_OTHER = 2;   // unknown or error tape
 // sounds for longer. BAD_TRACK_MS must be ~the length of track 2 so the plays
 // chain back-to-back — set it to your alarm clip's duration.
 static const uint8_t  BAD_TRACK_PLAYS = 3;      // total plays for a bad tape
-static const uint32_t BAD_TRACK_MS    = 3200;   // track 2 is ~3s; small margin avoids overlap
+// Track 2's file is ~3s but the alarm sound is only ~2s (trailing silence). A
+// new play command preempts the current one, so re-triggering at ~2.1s cuts the
+// silence and restarts the sound for a near-seamless, back-to-back alarm.
+static const uint32_t BAD_TRACK_MS    = 2100;
 
 // Presence / debounce tuning.
 static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
