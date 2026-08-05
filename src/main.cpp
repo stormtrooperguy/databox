@@ -16,9 +16,10 @@
 //  Cartridge presence model:
 //    - A tag is read once on insertion and its action fires exactly once.
 //    - While the SAME tag stays present, nothing repeats or interrupts.
-//    - Brief read dropouts (the cartridge being jostled) are debounced, so a
-//      tag has to be genuinely gone for ABSENT_DEBOUNCE_MS before it counts as
-//      removed. Re-inserting a tape then replays its sequence.
+//    - Brief read dropouts (a jostled or marginally-seated cartridge) are
+//      tolerated: each poll retries the read, and it takes ABSENT_MISSES
+//      consecutive missed polls before a tag counts as removed. Re-inserting a
+//      tape then replays its sequence.
 //
 //  The five 7-LED rings continuously blink white @ 50% in a random pattern to
 //  emulate a "thinking" 70s/80s sci-fi computer. The three white LEDs are
@@ -100,7 +101,8 @@ static const uint32_t BAD_TRACK_MS    = 1800;
 
 // Presence / debounce tuning.
 static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
-static const uint32_t ABSENT_DEBOUNCE_MS    = 400; // must be gone this long = removed
+static const uint8_t  READ_ATTEMPTS         = 3;   // read tries per poll before it's a miss
+static const uint8_t  ABSENT_MISSES         = 8;   // consecutive missed polls = removed (~1.2s)
 static const uint16_t PN532_READ_TIMEOUT_MS = 50;  // per-poll blocking read cap
 
 // Tape UID tables --------------------------------------------------------------
@@ -165,8 +167,8 @@ static unsigned long thinkNextToggle[RINGS7_RINGS];
 static bool          cartridgePresent = false;
 static uint8_t       curUid[10];
 static uint8_t       curUidLen = 0;
-static unsigned long lastSeen  = 0;
 static unsigned long lastPoll  = 0;
+static uint8_t       missCount = 0;   // consecutive failed polls while a tape is present
 
 // Bad-tape alarm scheduler (replays TRACK_OTHER a few times from loop()).
 static uint8_t       alarmPlaysLeft = 0;
@@ -394,18 +396,20 @@ static void handleRemoval() {
 // The short timeout stops empty polls from stalling the light animations.
 // Returns true and fills uid/len when a tag is read.
 static bool tryReadUid(uint8_t* uid, uint8_t* len) {
-    uint8_t buf[7] = {0};                 // ISO14443A UIDs are 4 or 7 bytes
-    uint8_t uidLen = 0;
-
-    if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, buf, &uidLen,
-                                 PN532_READ_TIMEOUT_MS)) {
-        return false;
+    // Retry a few times per poll: a marginally-seated tag often misses one read
+    // but answers the next, which keeps a resting tape from looking "removed".
+    for (uint8_t attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+        uint8_t buf[7] = {0};             // ISO14443A UIDs are 4 or 7 bytes
+        uint8_t uidLen = 0;
+        if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, buf, &uidLen,
+                                    PN532_READ_TIMEOUT_MS)) {
+            if (uidLen == 0 || uidLen > sizeof(buf)) return false;
+            memcpy(uid, buf, uidLen);
+            *len = uidLen;
+            return true;
+        }
     }
-    if (uidLen == 0 || uidLen > sizeof(buf)) return false;
-
-    memcpy(uid, buf, uidLen);
-    *len = uidLen;
-    return true;
+    return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -506,7 +510,7 @@ void loop() {
     uint8_t uid[10];
     uint8_t len = 0;
     if (tryReadUid(uid, &len)) {
-        lastSeen = now;
+        missCount = 0;
         // A new insertion is either "nothing was present" or "a different tag
         // than the one we're tracking" (a hot swap without a clean removal).
         bool isNew = !cartridgePresent || !sameUid(uid, len, curUid, curUidLen);
@@ -517,10 +521,13 @@ void loop() {
             handleTape(uid, len);
         }
         // Same tag still present -> do nothing (no repeat, no interrupt).
-    } else if (cartridgePresent && (now - lastSeen >= ABSENT_DEBOUNCE_MS)) {
-        // Missed reads long enough to count as a real removal (jostle-proof).
+    } else if (cartridgePresent && ++missCount >= ABSENT_MISSES) {
+        // Enough consecutive missed polls to count as a real removal. Counting
+        // misses (not elapsed time) is immune to the blocking insert animation
+        // and tolerates a marginally-seated tag dropping out for a moment.
         cartridgePresent = false;
         curUidLen = 0;
+        missCount = 0;
         handleRemoval();
     }
 }
