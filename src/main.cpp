@@ -89,6 +89,12 @@ static const uint8_t AUDIO_VOLUME = 30;   // max
 static const uint16_t TRACK_KNOWN = 1;   // known tape
 static const uint16_t TRACK_OTHER = 2;   // unknown or error tape
 
+// The good track plays once; the bad-tape "alarm" (track 2) is replayed so it
+// sounds for longer. BAD_TRACK_MS must be ~the length of track 2 so the plays
+// chain back-to-back — set it to your alarm clip's duration.
+static const uint8_t  BAD_TRACK_PLAYS = 3;      // total plays for a bad tape
+static const uint32_t BAD_TRACK_MS    = 3200;   // track 2 is ~3s; small margin avoids overlap
+
 // Presence / debounce tuning.
 static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
 static const uint32_t ABSENT_DEBOUNCE_MS    = 400; // must be gone this long = removed
@@ -158,6 +164,10 @@ static uint8_t       curUid[10];
 static uint8_t       curUidLen = 0;
 static unsigned long lastSeen  = 0;
 static unsigned long lastPoll  = 0;
+
+// Bad-tape alarm scheduler (replays TRACK_OTHER a few times from loop()).
+static uint8_t       alarmPlaysLeft = 0;
+static unsigned long alarmLastPlay  = 0;
 
 // -----------------------------------------------------------------------------
 //  DFR1173 voice module — raw serial command frames
@@ -355,6 +365,9 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     playInsertionAnimation(finalColor);
     setReaderLeds(ledGreen, ledRed);
     audioPlayTrack(track);
+    // Good track plays once; a bad tape queues extra replays so the alarm lasts.
+    alarmPlaysLeft = (cls == CLASS_KNOWN) ? 0 : (BAD_TRACK_PLAYS - 1);
+    alarmLastPlay  = millis();
 
     // Drive the POC receiver: /known for a good tape, /unknown for anything else.
     notifyReceiver(cls == CLASS_KNOWN ? "/known" : "/unknown");
@@ -365,6 +378,7 @@ static void handleRemoval() {
     setReaderLeds(false, false);
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
     FastLED.show();
+    alarmPlaysLeft = 0;   // cancel any pending alarm replays
     notifyReceiver("/off");
     Serial.println("Cartridge removed.");
 }
@@ -471,6 +485,13 @@ void loop() {
     // Keep the "thinking" rings alive every pass.
     updateThinkingRings();
     FastLED.show();
+
+    // Bad-tape alarm: replay TRACK_OTHER a few times so it sounds for longer.
+    if (alarmPlaysLeft > 0 && millis() - alarmLastPlay >= BAD_TRACK_MS) {
+        audioPlayTrack(TRACK_OTHER);
+        alarmLastPlay = millis();
+        alarmPlaysLeft--;
+    }
 
     unsigned long now = millis();
     if (now - lastPoll < POLL_INTERVAL_MS) {
