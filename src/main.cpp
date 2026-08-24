@@ -26,9 +26,10 @@
 //      tape then replays its sequence.
 //
 //  The five 7-LED rings continuously blink white @ 50% in a random pattern to
-//  emulate a "thinking" 70s/80s sci-fi computer. The three white LEDs are
-//  always on. WiFi connects at boot and a stub reports each scan to a remote
-//  API (endpoint added later).
+//  emulate a "thinking" 70s/80s sci-fi computer. WiFi connects at boot; the
+//  reader LEDs then flash green x3 (connected) or red x3 (failed) as a status
+//  cue, after which the three always-on white LEDs come on. A stub reports each
+//  scan to a remote API (endpoint added later).
 // =============================================================================
 
 #include <Arduino.h>
@@ -492,7 +493,18 @@ static void registerOrLoadGoodTape() {
 // -----------------------------------------------------------------------------
 //  Setup
 // -----------------------------------------------------------------------------
-static void connectWifi() {
+// Flash a reader status LED `times` times: green for OK, red for fail.
+static void flashStatus(bool green, uint8_t times) {
+    for (uint8_t i = 0; i < times; i++) {
+        setReaderLeds(green, !green);   // green -> green LED, else red LED
+        delay(150);
+        setReaderLeds(false, false);
+        delay(150);
+    }
+}
+
+// Returns true if WiFi connected within the timeout.
+static bool connectWifi() {
     Serial.printf("WiFi: connecting to \"%s\" ...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER)) {
@@ -509,9 +521,10 @@ static void connectWifi() {
     if (WiFi.status() == WL_CONNECTED) {
         Serial.print("WiFi: connected, IP ");
         Serial.println(WiFi.localIP());
-    } else {
-        Serial.println("WiFi: not connected (continuing offline).");
+        return true;
     }
+    Serial.println("WiFi: not connected (continuing offline).");
+    return false;
 }
 
 void setup() {
@@ -524,7 +537,7 @@ void setup() {
     pinMode(PIN_LED_RED,   OUTPUT);
     pinMode(PIN_WHITE_LEDS, OUTPUT);
     setReaderLeds(false, false);
-    digitalWrite(PIN_WHITE_LEDS, HIGH);   // white LEDs are always on
+    // White LEDs come on after the WiFi join sequence completes (see below).
 
     // WS2812B strips.
     FastLED.addLeds<WS2812B, PIN_RING16, GRB>(ring16, RING16_COUNT);
@@ -561,7 +574,11 @@ void setup() {
     audioSetVolume(AUDIO_VOLUME);
     Serial.println("DFR1173: volume set.");
 
-    connectWifi();
+    // WiFi status on the reader LEDs: green x3 on success, red x3 on failure.
+    // The white LEDs then come on once the join sequence is done, either way.
+    bool wifiOk = connectWifi();
+    flashStatus(wifiOk, 3);
+    digitalWrite(PIN_WHITE_LEDS, HIGH);
 
     Serial.println("Ready. Insert a cartridge.");
 }

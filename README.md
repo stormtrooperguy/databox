@@ -31,9 +31,16 @@ Continuous background behaviour:
 - The **five 7-LED rings** each blink white at **50% brightness** in an
   independent random pattern, emulating a 70s/80s sci-fi "thinking" computer.
   (All 7 LEDs in a ring act as one — they share colour covers.)
-- The **three white LEDs** are always on.
+- The **three white LEDs** are on once boot completes.
 - The device connects to **WiFi** at boot and reports each scan to a remote API
   (endpoint stubbed out for now).
+
+Startup sequence (reader LEDs double as status indicators):
+
+1. WiFi join is attempted (up to 15 s).
+2. The reader LEDs flash **green ×3** if it connected, **red ×3** if it failed.
+3. The **white LEDs turn on** once that sequence finishes — either way — signalling
+   the device is ready.
 
 ### Cartridge presence & debounce
 
