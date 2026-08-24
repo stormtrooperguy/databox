@@ -14,7 +14,7 @@ When a cartridge is inserted, its RFID tag is read and classified:
 
 | Class       | How it's decided                            | Reader LED | 16-ring colour | Audio            |
 |-------------|---------------------------------------------|------------|----------------|------------------|
-| **Known**   | UID matches one of the 10 catalogued tapes  | Green      | Blue           | Track 1 (known)  |
+| **Known**   | UID matches the registered good tape        | Green      | Blue           | Track 1 (known)  |
 | **Error**   | UID matches the single "bad" tape           | Red        | Red            | Track 2 (other)  |
 | **Unknown** | Any other UID (fallback)                     | Red        | Red            | Track 2 (other)  |
 
@@ -174,7 +174,8 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
   scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
   `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
 - **Volume** — `AUDIO_VOLUME` (0–30; currently 30 = max).
-- **Tape UIDs** — `KNOWN_TAPES[]` (10 entries) and `ERROR_TAPE`.
+- **Good tape** — self-registered at boot and saved to flash; `KNOWN_TAPES[]`
+  is only the fallback when none was ever registered. See below.
 - **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue
   network: `STATIC_IP` = `192.168.50.10`, `GATEWAY`/`DNS_SERVER` = `192.168.50.1`,
   `SUBNET` = `255.255.255.0`. Adjust if the router isn't at `.1`.
@@ -198,19 +199,25 @@ Then edit `src/secrets.h`:
 `src/main.cpp` includes `secrets.h`, so the build will fail if the file is
 missing — that's the reminder to create it on a fresh checkout.
 
-### Programming the tape UIDs
+### The good tape (self-registration)
 
-The placeholder UIDs must be replaced with your real tags. Every scan is printed
-to the serial monitor:
+There is a single **good tape**, set by self-registration:
 
-```
-UID: DE AD BE 01
-```
+- **A tape present at boot** becomes the good tape. Its UID is saved to the
+  ESP32's **NVS flash** (via `Preferences`), so it persists across power cycles
+  **and firmware reflashes** (only a full chip-erase clears it). To re-assign the
+  good tape, just power on with the new tape in the slot.
+- **No tape at boot** → the previously saved good tape is loaded from flash.
+- **Never registered** (blank flash) → the device falls back to the built-in
+  `KNOWN_TAPES` list, so a fresh unit still works out of the box.
 
-Insert each tape, read its UID from the monitor, and paste the bytes into the
-matching `KNOWN_TAPES` entry (or `ERROR_TAPE`), then re-flash. MIFARE Classic
-cards use 4-byte UIDs (`len = 4`); 7-byte ISO14443A tags are also supported
-(set `len = 7`).
+The boot scan window is `BOOT_REGISTER_MS` (1.5 s). If a tape is registered while
+sitting in the slot, it then runs the normal known sequence (blue ring + audio),
+which doubles as "registration succeeded" feedback.
+
+Every scan is still printed to the serial monitor (`UID: 04 7E 26 ...`), and the
+built-in `KNOWN_TAPES` / `ERROR_TAPE` fallback UIDs can be edited in
+`src/main.cpp` (4-byte `len = 4`, 7-byte ISO14443A `len = 7`).
 
 ---
 

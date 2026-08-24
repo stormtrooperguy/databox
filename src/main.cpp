@@ -3,10 +3,14 @@
 // =============================================================================
 //  A cartridge (RFID tape) is inserted into a slot, which presents its tag to
 //  a PN532 NFC reader. The tag is classified as:
-//     * KNOWN   - one of 10 catalogued tapes. Reader GREEN LED, 16-ring BLUE,
-//                 plays the "known" track.
+//     * KNOWN   - the good tape. Reader GREEN LED, 16-ring BLUE, "known" track.
 //     * ERROR   - the single "bad" tape. Reader RED LED, 16-ring RED, "other" track.
 //     * UNKNOWN - fallback for any other tag. Reader RED LED, 16-ring RED, "other" track.
+//
+//  The good tape self-registers: whatever tag is present at boot becomes THE
+//  good tape and is saved to flash (NVS), persisting across reboots and even
+//  firmware reflashes. If no tag is present at boot, the last saved one is used;
+//  if none was ever registered, the built-in KNOWN_TAPES list is the fallback.
 //
 //  On insertion the 16-LED ring runs a 2s white chase, flashes white twice,
 //  then holds its class colour (blue = good, red = not good). Once the ring
@@ -33,6 +37,7 @@
 #include <FastLED.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <Preferences.h>   // NVS storage for the self-registered good tape
 #include "secrets.h"   // WIFI_SSID / WIFI_PASSWORD — git-ignored (see secrets.h.example)
 
 // -----------------------------------------------------------------------------
@@ -103,6 +108,7 @@ static const uint32_t BAD_TRACK_MS    = 1800;
 static const uint32_t POLL_INTERVAL_MS      = 120; // how often presence is checked
 static const uint8_t  READ_ATTEMPTS         = 3;   // read tries per poll before it's a miss
 static const uint8_t  ABSENT_MISSES         = 8;   // consecutive missed polls = removed (~1.2s)
+static const uint32_t BOOT_REGISTER_MS      = 1500;// boot scan window to self-register a good tape
 static const uint16_t PN532_READ_TIMEOUT_MS = 50;  // per-poll blocking read cap
 
 // Tape UID tables --------------------------------------------------------------
@@ -130,6 +136,13 @@ static const size_t KNOWN_TAPE_COUNT = sizeof(KNOWN_TAPES) / sizeof(KNOWN_TAPES[
 
 // The single "error" tape (distinct lights, but plays TRACK_OTHER like unknowns).
 static const TapeEntry ERROR_TAPE = { 4, {0xBA, 0xDB, 0xAD, 0x00} };
+
+// The active "good" tape. Either self-registered at boot and persisted to flash
+// (NVS), or — when nothing has ever been registered — the built-in KNOWN_TAPES
+// list above is used as the fallback. See registerOrLoadGoodTape().
+static Preferences prefs;
+static bool        goodRegistered = false;
+static TapeEntry   goodTape;
 
 // -----------------------------------------------------------------------------
 //  LED layout
@@ -284,11 +297,19 @@ static TapeClass classifyTape(const uint8_t* uid, uint8_t len, uint16_t& trackOu
         trackOut = TRACK_OTHER;
         return CLASS_ERROR;
     }
-    for (size_t i = 0; i < KNOWN_TAPE_COUNT; i++) {
-        if (uidMatches(KNOWN_TAPES[i], uid, len)) {
-            trackOut = TRACK_KNOWN;
-            return CLASS_KNOWN;
+    // "Good" is the self-registered tape when we have one, otherwise the
+    // built-in fallback list.
+    bool good = false;
+    if (goodRegistered) {
+        good = uidMatches(goodTape, uid, len);
+    } else {
+        for (size_t i = 0; i < KNOWN_TAPE_COUNT; i++) {
+            if (uidMatches(KNOWN_TAPES[i], uid, len)) { good = true; break; }
         }
+    }
+    if (good) {
+        trackOut = TRACK_KNOWN;
+        return CLASS_KNOWN;
     }
     trackOut = TRACK_OTHER;
     return CLASS_UNKNOWN;
@@ -413,6 +434,62 @@ static bool tryReadUid(uint8_t* uid, uint8_t* len) {
 }
 
 // -----------------------------------------------------------------------------
+//  Self-registered "good" tape (persisted in NVS via Preferences)
+// -----------------------------------------------------------------------------
+// Loads a previously saved good tape into goodTape. Returns true if a valid one
+// was stored.
+static bool loadGoodTape() {
+    prefs.begin("databox", true);          // read-only
+    uint8_t len = prefs.getUChar("goodLen", 0);
+    bool ok = false;
+    if (len >= 4 && len <= sizeof(goodTape.uid)) {
+        if (prefs.getBytes("goodUid", goodTape.uid, len) == len) {
+            goodTape.len = len;
+            ok = true;
+        }
+    }
+    prefs.end();
+    return ok;
+}
+
+// Persists uid/len as the good tape to NVS (and into goodTape).
+static void saveGoodTape(const uint8_t* uid, uint8_t len) {
+    goodTape.len = len;
+    memcpy(goodTape.uid, uid, len);
+    prefs.begin("databox", false);         // read-write
+    prefs.putUChar("goodLen", len);
+    prefs.putBytes("goodUid", uid, len);
+    prefs.end();
+}
+
+// At boot: if a tape is present within BOOT_REGISTER_MS, register it as the good
+// tape (persisted to flash). Otherwise reuse the previously saved one, or fall
+// back to the built-in KNOWN_TAPES list if nothing was ever registered.
+static void registerOrLoadGoodTape() {
+    uint8_t uid[10];
+    uint8_t len = 0;
+    uint32_t start = millis();
+    bool found = false;
+    while (millis() - start < BOOT_REGISTER_MS) {
+        if (tryReadUid(uid, &len)) { found = true; break; }
+    }
+
+    if (found) {
+        saveGoodTape(uid, len);
+        goodRegistered = true;
+        Serial.print("Good tape registered from boot scan: ");
+        printUid(uid, len);
+    } else if (loadGoodTape()) {
+        goodRegistered = true;
+        Serial.print("Good tape loaded from flash: ");
+        printUid(goodTape.uid, goodTape.len);
+    } else {
+        goodRegistered = false;
+        Serial.println("No registered good tape; using built-in list.");
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Setup
 // -----------------------------------------------------------------------------
 static void connectWifi() {
@@ -473,6 +550,10 @@ void setup() {
                       (int)((ver >> 16) & 0xFF), (int)((ver >> 8) & 0xFF));
     }
     nfc.SAMConfig();   // required before reading passive targets
+
+    // Self-register the good tape if one is present at boot; otherwise load the
+    // saved one (falls back to the built-in KNOWN_TAPES list if never set).
+    registerOrLoadGoodTape();
 
     // DFR1173 voice module.
     dfSerial.begin(9600, SERIAL_8N1, PIN_DF_RX, PIN_DF_TX);
