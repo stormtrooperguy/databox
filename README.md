@@ -175,8 +175,10 @@ Track numbers are configurable near the top of `src/main.cpp`
 
 Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 
-- **API** — `API_URL`. Leave `""` to disable reporting; set it later to POST a
-  JSON body `{"uid","class","track"}` on each scan.
+- **API endpoint** — the scan-reporting URL. **Per unit**, it's stored in flash
+  and set over the serial console (see below); `API_URL` in `src/main.cpp` is only
+  the compiled default when none is stored. On each scan the reader POSTs a JSON
+  body `{"uid","class","track"}` to it (skipped if unset).
 - **POC receiver** — `RECEIVER_BASE_URL` (default `http://192.168.50.1`). On each
   scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
   `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
@@ -225,6 +227,23 @@ which doubles as "registration succeeded" feedback.
 Every scan is still printed to the serial monitor (`UID: 04 7E 26 ...`), and the
 built-in `KNOWN_TAPES` / `ERROR_TAPE` fallback UIDs can be edited in
 `src/main.cpp` (4-byte `len = 4`, 7-byte ISO14443A `len = 7`).
+
+### Per-unit endpoint (serial console)
+
+The five units share one firmware but each reports to its own API endpoint. The
+endpoint is stored in flash (NVS) and set over the **serial console** — no
+per-unit build. With the unit on USB and the monitor open (115200):
+
+```
+set url https://api.example.com/unit3/scan   # store this unit's endpoint
+show config                                  # print endpoint, good tape, WiFi/IP
+clear url                                     # revert to the compiled default
+```
+
+The stored endpoint **persists across reboots and reflashes** (only a full
+chip-erase clears it), so you set each unit once. `reportScan()` POSTs to the
+stored URL, or does nothing if none is set. The boot log prints the active
+`API URL:` so you can confirm at a glance.
 
 ---
 

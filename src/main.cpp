@@ -79,7 +79,9 @@ static const IPAddress GATEWAY    (192, 168, 50,  1);
 static const IPAddress SUBNET     (255, 255, 255, 0);
 static const IPAddress DNS_SERVER (192, 168, 50,  1);
 
-// Remote API — endpoint to be added later. Leave empty to disable reporting.
+// Remote API — the compiled DEFAULT endpoint. Per unit this is overridden by a
+// value stored in flash (NVS), set over serial with "set url <endpoint>". Leave
+// "" so an unconfigured unit simply doesn't report. See loadApiUrl().
 static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
 
 // POC receiver (see poc/): the databox drives that device's 16-LED ring over
@@ -144,6 +146,10 @@ static const TapeEntry ERROR_TAPE = { 4, {0xBA, 0xDB, 0xAD, 0x00} };
 static Preferences prefs;
 static bool        goodRegistered = false;
 static TapeEntry   goodTape;
+
+// Effective remote API endpoint: loaded from NVS at boot (set via the serial
+// "set url" command), falling back to the compiled API_URL default if unset.
+static String      apiUrl;
 
 // -----------------------------------------------------------------------------
 //  LED layout
@@ -326,7 +332,7 @@ static void printUid(const uint8_t* uid, uint8_t len) {
 //  Remote API reporting (stub — endpoint added later)
 // -----------------------------------------------------------------------------
 static void reportScan(TapeClass cls, uint16_t track, const uint8_t* uid, uint8_t len) {
-    if (strlen(API_URL) == 0) return;             // reporting disabled
+    if (apiUrl.length() == 0) return;             // no endpoint configured
     if (WiFi.status() != WL_CONNECTED) return;
 
     char uidStr[21] = {0};
@@ -342,7 +348,7 @@ static void reportScan(TapeClass cls, uint16_t track, const uint8_t* uid, uint8_
                   "\",\"track\":" + track + "}";
 
     HTTPClient http;
-    http.begin(API_URL);
+    http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(body);
     Serial.printf("API POST -> %d\n", code);
@@ -491,6 +497,81 @@ static void registerOrLoadGoodTape() {
 }
 
 // -----------------------------------------------------------------------------
+//  Remote API endpoint (persisted in NVS; set over serial)
+// -----------------------------------------------------------------------------
+static void loadApiUrl() {
+    prefs.begin("databox", true);                 // read-only
+    apiUrl = prefs.getString("apiUrl", API_URL);  // fall back to compiled default
+    prefs.end();
+}
+
+static void saveApiUrl(const String& url) {
+    apiUrl = url;
+    prefs.begin("databox", false);                // read-write
+    prefs.putString("apiUrl", url);
+    prefs.end();
+}
+
+static void clearApiUrl() {
+    apiUrl = String(API_URL);
+    prefs.begin("databox", false);
+    prefs.remove("apiUrl");
+    prefs.end();
+}
+
+static void printConfig() {
+    Serial.println(F("---- config ----"));
+    Serial.print(F("API URL:   "));
+    Serial.println(apiUrl.length() ? apiUrl : String("(unset)"));
+    Serial.print(F("Good tape: "));
+    if (goodRegistered) printUid(goodTape.uid, goodTape.len);
+    else                Serial.println(F("(none registered; using built-in list)"));
+    Serial.print(F("WiFi:      "));
+    Serial.println(WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString()
+                                                 : String("not connected"));
+    Serial.println(F("----------------"));
+}
+
+// Parse one serial command line: set url <endpoint> | clear url | show config.
+static void handleConfigCommand(String cmd) {
+    cmd.trim();
+    if (cmd.startsWith("set url ")) {
+        String url = cmd.substring(8);
+        url.trim();
+        saveApiUrl(url);
+        Serial.print(F("API URL set to: "));
+        Serial.println(apiUrl.length() ? apiUrl : String("(empty)"));
+    } else if (cmd == "clear url") {
+        clearApiUrl();
+        Serial.println(F("API URL cleared (using compiled default)."));
+    } else if (cmd == "show config" || cmd == "show") {
+        printConfig();
+    } else if (cmd == "help" || cmd == "?") {
+        Serial.println(F("Commands: set url <endpoint> | clear url | show config"));
+    } else {
+        Serial.print(F("Unknown command: "));
+        Serial.println(cmd);
+        Serial.println(F("Try: set url <endpoint> | clear url | show config"));
+    }
+}
+
+// Non-blocking: accumulate a line from serial and dispatch it on newline.
+static void pollSerialConfig() {
+    static String line;
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\n' || c == '\r') {
+            if (line.length() > 0) {
+                handleConfigCommand(line);
+                line = "";
+            }
+        } else if (line.length() < 200) {
+            line += c;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Setup
 // -----------------------------------------------------------------------------
 // Flash a reader status LED `times` times: green for OK, red for fail.
@@ -568,6 +649,11 @@ void setup() {
     // saved one (falls back to the built-in KNOWN_TAPES list if never set).
     registerOrLoadGoodTape();
 
+    // Load this unit's remote API endpoint from flash (set over serial).
+    loadApiUrl();
+    Serial.print("API URL: ");
+    Serial.println(apiUrl.length() ? apiUrl : String("(unset — use 'set url <endpoint>')"));
+
     // DFR1173 voice module.
     dfSerial.begin(9600, SERIAL_8N1, PIN_DF_RX, PIN_DF_TX);
     delay(200);
@@ -587,6 +673,9 @@ void setup() {
 //  Main loop
 // -----------------------------------------------------------------------------
 void loop() {
+    // Serial config console: set url <endpoint> | clear url | show config.
+    pollSerialConfig();
+
     // Keep the "thinking" rings alive every pass.
     updateThinkingRings();
     FastLED.show();
