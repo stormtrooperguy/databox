@@ -349,6 +349,8 @@ static void reportScan(TapeClass cls, uint16_t track, const uint8_t* uid, uint8_
 
     HTTPClient http;
     http.begin(apiUrl);
+    http.setConnectTimeout(800);   // don't stall a scan if the API is slow/down
+    http.setTimeout(800);
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(body);
     Serial.printf("API POST -> %d\n", code);
