@@ -12,19 +12,25 @@ Built with **PlatformIO**.
 
 When a cartridge is inserted, its RFID tag is read and classified:
 
-| Class       | How it's decided                            | Reader LED | 16-ring colour | Audio            |
-|-------------|---------------------------------------------|------------|----------------|------------------|
-| **Known**   | UID matches the registered good tape        | Green      | Blue           | Track 1 (known)  |
-| **Error**   | UID matches the single "bad" tape           | Red        | Red            | Track 2 (other)  |
-| **Unknown** | Any other UID (fallback)                     | Red        | Red            | Track 2 (other)  |
+| Class       | How it's decided                            | Reader LED | 16-ring          | Audio            | API      |
+|-------------|---------------------------------------------|------------|------------------|------------------|----------|
+| **Known**   | UID matches the registered good tape        | Green      | Blue             | Track 1 (known)  | /known   |
+| **Special** | UID in the hard-coded `SPECIAL_TAPES` list  | off        | Purple chase     | Its own track    | none     |
+| **Error**   | UID matches the single "bad" tape           | Red        | Red              | Track 2 (other)  | /unknown |
+| **Unknown** | Any other UID (fallback)                     | Red        | Red              | Track 2 (other)  | /unknown |
 
-Sequence on every insertion:
+Sequence on insertion of a **known / unknown / error** tape:
 
 1. The **16-LED ring** runs a white comet **chase for 2 seconds**.
 2. It **flashes white twice**.
 3. It **holds steady** on the class colour: **blue** (good) or **red** (not good).
 4. Once the ring settles, the **reader LED lights** (green/red) and the
    **matching audio track plays**.
+
+A **special** tape skips that sequence: it plays its own track and runs a
+**purple comet chase** on the 16-ring for the track's length (`durationMs`),
+with the reader LEDs dark and no API call. See
+[Special / easter-egg tapes](#special--easter-egg-tapes).
 
 Continuous background behaviour:
 
@@ -153,21 +159,21 @@ for battery's sake.
 
 The DFR1173 has **16MB of internal storage** (no SD card). Connect it to your
 computer over USB and copy the audio files on. The module plays a track by its
-**index number** — the order the files were copied — so copy them **in order**.
-There are just **two tracks**:
+**index number** — the order the files were copied — so copy them **in order**:
 
-| Copy order (track #) | Purpose                                  |
-|----------------------|------------------------------------------|
-| 1                    | Known tape                               |
-| 2                    | Anything else (unknown *and* error tape) |
+| Copy order (track #) | Purpose                                       |
+|----------------------|-----------------------------------------------|
+| 1                    | Known tape                                    |
+| 2                    | Anything else (unknown *and* error tape)      |
+| 3, 4, …              | One per special / easter-egg tape (see below) |
 
-Naming the files with a numeric prefix (e.g. `01_known.mp3`, `02_other.mp3`) and
-copying them in that order keeps the index predictable. MP3/WAV/WMA are
-supported. The firmware sends the raw serial "play track N" command
-(`0x7E 0x03 … 0xEF`); no library is needed. Volume is set to max (30) at boot.
+Naming the files with a numeric prefix (e.g. `01_known.mp3`, `02_other.mp3`,
+`03_special.mp3`) and copying them in that order keeps the index predictable.
+MP3/WAV/WMA are supported. The firmware sends the raw serial "play track N"
+command (`0x7E 0x03 … 0xEF`); no library is needed. Volume is max (30) at boot.
 
-Track numbers are configurable near the top of `src/main.cpp`
-(`TRACK_KNOWN`, `TRACK_OTHER`).
+Track numbers are configurable in `src/main.cpp` (`TRACK_KNOWN`, `TRACK_OTHER`,
+and the `track` field of each `SPECIAL_TAPES` entry).
 
 ---
 
@@ -232,6 +238,28 @@ which doubles as "registration succeeded" feedback.
 Every scan is still printed to the serial monitor (`UID: 04 7E 26 ...`), and the
 built-in `KNOWN_TAPES` / `ERROR_TAPE` fallback UIDs can be edited in
 `src/main.cpp` (4-byte `len = 4`, 7-byte ISO14443A `len = 7`).
+
+### Special / easter-egg tapes
+
+A hard-coded `SPECIAL_TAPES[]` table in `src/main.cpp` holds any number of
+easter-egg tapes. Each entry is `{ len, {uid}, track, durationMs }`:
+
+```c
+static const SpecialTape SPECIAL_TAPES[] = {
+    { 7, {0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66}, 3, 8000 },  // track 3, ~8s
+    { 7, {0x04, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC}, 4, 5000 },  // track 4, ~5s
+};
+```
+
+When a matching tape is inserted, it plays its `track` and runs a **purple comet
+chase** on the 16-ring for `durationMs`, then the ring goes dark. Removing the
+tape stops the chase and the audio. Special tapes make **no API call** — they
+act only on the unit itself. Use track numbers **3+** (1 = known, 2 = other).
+
+**`durationMs` = the track's length.** The DFR1173's BUSY pin (true "is it still
+playing?" signal) isn't wired, so the chase is timed to this value rather than to
+actual playback — set it to roughly the clip length. (Wiring BUSY to a GPIO for
+real playback-sync is a small future change.)
 
 ### Per-unit endpoint (serial console)
 

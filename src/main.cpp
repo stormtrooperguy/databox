@@ -4,6 +4,8 @@
 //  A cartridge (RFID tape) is inserted into a slot, which presents its tag to
 //  a PN532 NFC reader. The tag is classified as:
 //     * KNOWN   - the good tape. Reader GREEN LED, 16-ring BLUE, "known" track.
+//     * SPECIAL - an easter-egg tape (hard-coded list). Its own audio track + a
+//                 purple chase on the 16-ring for the track's length; NO API call.
 //     * ERROR   - the single "bad" tape. Reader RED LED, 16-ring RED, "other" track.
 //     * UNKNOWN - fallback for any other tag. Reader RED LED, 16-ring RED, "other" track.
 //
@@ -141,6 +143,21 @@ static const size_t KNOWN_TAPE_COUNT = sizeof(KNOWN_TAPES) / sizeof(KNOWN_TAPES[
 // The single "error" tape (distinct lights, but plays TRACK_OTHER like unknowns).
 static const TapeEntry ERROR_TAPE = { 4, {0xBA, 0xDB, 0xAD, 0x00} };
 
+// "Special" / easter-egg tapes. Each plays its own audio track and drives a
+// purple chase on the 16-ring for durationMs (~ the track length), and makes NO
+// API call. Use track numbers 3+ (1 = known, 2 = other). Replace the placeholder
+// with real UIDs; every scan's UID is printed to serial.
+struct SpecialTape {
+    uint8_t  len;          // UID length (4 or 7)
+    uint8_t  uid[10];      // UID bytes
+    uint16_t track;        // audio track to play
+    uint32_t durationMs;   // how long to run the purple chase (~ track length)
+};
+static const SpecialTape SPECIAL_TAPES[] = {
+    { 7, {0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 3, 8000 },   // placeholder — replace
+};
+static const size_t SPECIAL_TAPE_COUNT = sizeof(SPECIAL_TAPES) / sizeof(SPECIAL_TAPES[0]);
+
 // The active "good" tape. Either self-registered at boot and persisted to flash
 // (NVS), or — when nothing has ever been registered — the built-in KNOWN_TAPES
 // list above is used as the fallback. See registerOrLoadGoodTape().
@@ -168,9 +185,11 @@ static const CRGB THINK_ON  = CRGB(128, 128, 128);
 static const CRGB THINK_OFF = CRGB::Black;
 
 // 16-ring class colours: blue for good, red for not good.
-static const CRGB COLOR_KNOWN   = CRGB(0,   0,   255);   // blue  (good)
-static const CRGB COLOR_ERROR   = CRGB(255, 0,   0);     // red   (not good)
+static const CRGB COLOR_KNOWN   = CRGB(0,   0,   255);   // blue   (good)
+static const CRGB COLOR_ERROR   = CRGB(255, 0,   0);     // red    (not good)
 static const CRGB COLOR_WHITE   = CRGB(255, 255, 255);
+static const CRGB COLOR_PURPLE  = CRGB(160, 0,   255);   // purple (special / easter-egg)
+static const uint16_t PURPLE_STEP_MS = 50;               // purple chase step speed
 
 // -----------------------------------------------------------------------------
 //  Globals
@@ -178,7 +197,7 @@ static const CRGB COLOR_WHITE   = CRGB(255, 255, 255);
 Adafruit_PN532 nfc(PIN_PN532_IRQ, PIN_PN532_RST);
 HardwareSerial dfSerial(2);
 
-enum TapeClass { CLASS_KNOWN, CLASS_UNKNOWN, CLASS_ERROR };
+enum TapeClass { CLASS_KNOWN, CLASS_SPECIAL, CLASS_UNKNOWN, CLASS_ERROR };
 
 // Per-ring blink state for the five "thinking" rings.
 static bool          thinkOn[RINGS7_RINGS];
@@ -194,6 +213,15 @@ static uint8_t       missCount = 0;   // consecutive failed polls while a tape i
 // Bad-tape alarm scheduler (replays TRACK_OTHER a few times from loop()).
 static uint8_t       alarmPlaysLeft = 0;
 static unsigned long alarmLastPlay  = 0;
+
+// Special (easter-egg) tape state: a non-blocking purple chase runs on the
+// 16-ring for the track duration, driven from loop().
+static bool          presentIsSpecial = false;  // the tape in the slot is special
+static bool          specialActive    = false;  // purple chase currently running
+static unsigned long specialStart     = 0;
+static unsigned long specialDuration  = 0;
+static uint8_t       purpleHead       = 0;
+static unsigned long purpleLastStep   = 0;
 
 // -----------------------------------------------------------------------------
 //  DFR1173 voice module — raw serial command frames
@@ -300,10 +328,21 @@ static bool sameUid(const uint8_t* a, uint8_t alen, const uint8_t* b, uint8_t bl
     return memcmp(a, b, alen) == 0;
 }
 
-static TapeClass classifyTape(const uint8_t* uid, uint8_t len, uint16_t& trackOut) {
+static TapeClass classifyTape(const uint8_t* uid, uint8_t len,
+                              uint16_t& trackOut, uint32_t& durationOut) {
+    durationOut = 0;
     if (uidMatches(ERROR_TAPE, uid, len)) {
         trackOut = TRACK_OTHER;
         return CLASS_ERROR;
+    }
+    // Special / easter-egg tapes: own track + purple chase, no API.
+    for (size_t i = 0; i < SPECIAL_TAPE_COUNT; i++) {
+        const SpecialTape& s = SPECIAL_TAPES[i];
+        if (len == s.len && memcmp(uid, s.uid, len) == 0) {
+            trackOut    = s.track;
+            durationOut = s.durationMs;
+            return CLASS_SPECIAL;
+        }
     }
     // "Good" is the self-registered tape when we have one, otherwise the
     // built-in fallback list.
@@ -357,26 +396,71 @@ static void notifyBoth(const char* path) {
 }
 
 // -----------------------------------------------------------------------------
+//  Special (easter-egg) purple chase — non-blocking, runs for the track duration
+// -----------------------------------------------------------------------------
+static void startPurpleChase(uint32_t durationMs) {
+    specialActive   = true;
+    specialStart    = millis();
+    specialDuration = durationMs;
+    purpleHead      = 0;
+    purpleLastStep  = millis();
+    fill_solid(ring16, RING16_COUNT, CRGB::Black);
+    FastLED.show();
+}
+
+static void stopPurpleChase() {
+    specialActive = false;
+    fill_solid(ring16, RING16_COUNT, CRGB::Black);
+    FastLED.show();
+}
+
+// Advances the purple comet each step; ends when the track duration elapses.
+static void updatePurpleChase() {
+    if (!specialActive) return;
+    if (millis() - specialStart >= specialDuration) {
+        stopPurpleChase();
+        return;
+    }
+    if (millis() - purpleLastStep >= PURPLE_STEP_MS) {
+        purpleLastStep = millis();
+        fadeToBlackBy(ring16, RING16_COUNT, 90);   // trailing tail
+        ring16[purpleHead] = COLOR_PURPLE;
+        purpleHead = (purpleHead + 1) % RING16_COUNT;
+        FastLED.show();
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Handle a freshly inserted cartridge (fires once per insertion)
 // -----------------------------------------------------------------------------
 static void handleTape(const uint8_t* uid, uint8_t len) {
     printUid(uid, len);
 
     uint16_t track = 0;
-    TapeClass cls = classifyTape(uid, len, track);
+    uint32_t durationMs = 0;
+    TapeClass cls = classifyTape(uid, len, track, durationMs);
 
-    const char* clsName = (cls == CLASS_KNOWN) ? "KNOWN"
-                        : (cls == CLASS_ERROR) ? "ERROR"
-                                               : "UNKNOWN";
+    const char* clsName = (cls == CLASS_KNOWN)   ? "KNOWN"
+                        : (cls == CLASS_SPECIAL) ? "SPECIAL"
+                        : (cls == CLASS_ERROR)   ? "ERROR"
+                                                 : "UNKNOWN";
     Serial.printf("  -> %s (track %u)\n", clsName, track);
+
+    if (cls == CLASS_SPECIAL) {
+        // Easter-egg tape: its own track + purple chase for the duration, no API.
+        presentIsSpecial = true;
+        setReaderLeds(false, false);      // no green/red — it's a mystery
+        startPurpleChase(durationMs);
+        audioPlayTrack(track);
+        return;
+    }
+    presentIsSpecial = false;
+    specialActive    = false;             // stop any chase from a prior special tape
 
     CRGB finalColor;
     bool ledGreen = false, ledRed = false;
-    switch (cls) {
-        case CLASS_KNOWN:   finalColor = COLOR_KNOWN; ledGreen = true;  ledRed = false; break;
-        case CLASS_UNKNOWN: finalColor = COLOR_ERROR; ledGreen = false; ledRed = true;  break;
-        case CLASS_ERROR:   finalColor = COLOR_ERROR; ledGreen = false; ledRed = true;  break;
-    }
+    if (cls == CLASS_KNOWN) { finalColor = COLOR_KNOWN; ledGreen = true; }
+    else                    { finalColor = COLOR_ERROR; ledRed   = true; }  // unknown/error
 
     // Reader LEDs stay dark during the ring animation, then light once the ring
     // settles on its final colour; audio follows.
@@ -398,7 +482,15 @@ static void handleRemoval() {
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
     FastLED.show();
     alarmPlaysLeft = 0;   // cancel any pending alarm replays
-    notifyBoth("/off");
+
+    if (presentIsSpecial) {
+        // Easter-egg tape: end the chase + track, and make NO API call.
+        stopPurpleChase();
+        audioStop();
+        presentIsSpecial = false;
+    } else {
+        notifyBoth("/off");
+    }
     Serial.println("Cartridge removed.");
 }
 
@@ -672,6 +764,9 @@ void loop() {
         alarmLastPlay = millis();
         alarmPlaysLeft--;
     }
+
+    // Special tape: advance the non-blocking purple chase for the track duration.
+    updatePurpleChase();
 
     unsigned long now = millis();
     if (now - lastPoll < POLL_INTERVAL_MS) {
