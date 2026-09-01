@@ -203,9 +203,12 @@ cp src/secrets.h.example src/secrets.h
 Then edit `src/secrets.h`:
 
 ```c
-#define WIFI_SSID     "CSL_aurora"
-#define WIFI_PASSWORD "sammie2022"
+#define WIFI_SSID     "YOUR_SSID"
+#define WIFI_PASSWORD "YOUR_PASSWORD"
 ```
+
+Use your real values here — never commit them. `src/secrets.h` is git-ignored
+so they stay out of the repo.
 
 `src/main.cpp` includes `secrets.h`, so the build will fail if the file is
 missing — that's the reminder to create it on a fresh checkout.
@@ -270,7 +273,7 @@ driven with raw UART command frames.
 ## POC receiver (`poc/`)
 
 [`poc/`](poc/) is a separate ESP32 sketch used during testing to demonstrate the
-reader driving an external object **wirelessly**. It hosts the `CSL_aurora` AP
+reader driving an external object **wirelessly**. It hosts the reader's WiFi AP
 at `192.168.50.1` and drives a 16-LED ring: pulsing blue on `/known`, red flashes
 then solid red on `/unknown`, idle orange/yellow glow on `/off`. The reader reaches it because it
 joins that AP (the AP is the reader's configured gateway). It's a sample/demo,

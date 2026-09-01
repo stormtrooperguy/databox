@@ -6,8 +6,8 @@ wired connection between the two devices.
 
 ## What it does
 
-- **Hosts** a WiFi access point (`CSL_aurora` / password in `secrets.h`) — the
-  same network the databox reader is configured to join.
+- **Hosts** a WiFi access point (SSID/password from `secrets.h`) — the same
+  network the databox reader is configured to join.
 - Sits at a **static AP IP `192.168.50.1`** (subnet `/24`). The reader uses
   `192.168.50.10` with gateway `192.168.50.1`, so this unit *is* that gateway.
 - Drives a single **16-LED WS2812B ring** on **GPIO13** (no other hardware).
@@ -43,7 +43,7 @@ pinned in `platformio.ini`.
 
 ## Testing it
 
-**Standalone (no reader needed):** join the `CSL_aurora` AP from a phone/laptop,
+**Standalone (no reader needed):** join the AP (SSID from `secrets.h`) from a phone/laptop,
 then visit `http://192.168.50.1/known`, `/unknown`, or `/off` in a browser to
 drive the ring.
 
