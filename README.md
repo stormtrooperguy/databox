@@ -175,10 +175,12 @@ Track numbers are configurable near the top of `src/main.cpp`
 
 Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 
-- **API endpoint** — the scan-reporting URL. **Per unit**, it's stored in flash
-  and set over the serial console (see below); `API_URL` in `src/main.cpp` is only
-  the compiled default when none is stored. On each scan the reader POSTs a JSON
-  body `{"uid","class","track"}` to it (skipped if unset).
+- **API endpoint** — the per-unit remote **base URL**, stored in flash and set
+  over the serial console (see below); `API_URL` in `src/main.cpp` is only the
+  compiled default when none is stored. The reader POSTs the mode to it the same
+  way it drives the POC — `<base>/known` or `<base>/unknown` on insert, and
+  `<base>/off` on removal (skipped if unset). The error tape reports as
+  `/unknown`, so the API sees three modes: **known / unknown / off**.
 - **POC receiver** — `RECEIVER_BASE_URL` (default `http://192.168.50.1`). On each
   scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
   `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
@@ -240,10 +242,11 @@ show config                                  # print endpoint, good tape, WiFi/I
 clear url                                     # revert to the compiled default
 ```
 
-The stored endpoint **persists across reboots and reflashes** (only a full
-chip-erase clears it), so you set each unit once. `reportScan()` POSTs to the
-stored URL, or does nothing if none is set. The boot log prints the active
-`API URL:` so you can confirm at a glance.
+Set the **base URL** per unit (e.g. `https://api.example.com/unit3`); the reader
+POSTs to `<base>/known`, `<base>/unknown`, `<base>/off`. The stored value
+**persists across reboots and reflashes** (only a full chip-erase clears it), so
+you set each unit once. Nothing is sent if none is set. The boot log prints the
+active `API URL:` so you can confirm at a glance.
 
 ---
 

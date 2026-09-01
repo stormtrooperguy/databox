@@ -28,8 +28,9 @@
 //  The five 7-LED rings continuously blink white @ 50% in a random pattern to
 //  emulate a "thinking" 70s/80s sci-fi computer. WiFi connects at boot; the
 //  reader LEDs then flash green x3 (connected) or red x3 (failed) as a status
-//  cue, after which the three always-on white LEDs come on. A stub reports each
-//  scan to a remote API (endpoint added later).
+//  cue, after which the three always-on white LEDs come on. Each scan's mode
+//  (known/unknown/off) is POSTed to both the POC lantern and this unit's remote
+//  API (a base URL set over the serial console; see notifyMode / apiUrl).
 // =============================================================================
 
 #include <Arduino.h>
@@ -329,47 +330,30 @@ static void printUid(const uint8_t* uid, uint8_t len) {
 }
 
 // -----------------------------------------------------------------------------
-//  Remote API reporting (stub — endpoint added later)
+//  Mode notifications (known / unknown / off)
 // -----------------------------------------------------------------------------
-static void reportScan(TapeClass cls, uint16_t track, const uint8_t* uid, uint8_t len) {
-    if (apiUrl.length() == 0) return;             // no endpoint configured
+// Fire-and-forget POST to <base><path>, where path is "/known", "/unknown", or
+// "/off". Used for both the POC lantern (RECEIVER_BASE_URL) and each unit's
+// remote API (apiUrl). No-op when base is empty or WiFi is down; a short timeout
+// keeps a slow or absent target from stalling a scan.
+static void notifyMode(const char* base, const char* path) {
+    if (base == nullptr || base[0] == '\0') return;
     if (WiFi.status() != WL_CONNECTED) return;
 
-    char uidStr[21] = {0};
-    for (uint8_t i = 0; i < len && i < 10; i++) {
-        snprintf(uidStr + i * 2, 3, "%02X", uid[i]);
-    }
-    const char* clsStr = (cls == CLASS_KNOWN) ? "known"
-                       : (cls == CLASS_ERROR) ? "error"
-                                              : "unknown";
-
-    String body = String("{\"uid\":\"") + uidStr +
-                  "\",\"class\":\"" + clsStr +
-                  "\",\"track\":" + track + "}";
-
     HTTPClient http;
-    http.begin(apiUrl);
-    http.setConnectTimeout(800);   // don't stall a scan if the API is slow/down
+    String url = String(base) + path;
+    http.begin(url);
+    http.setConnectTimeout(800);
     http.setTimeout(800);
-    http.addHeader("Content-Type", "application/json");
-    int code = http.POST(body);
-    Serial.printf("API POST -> %d\n", code);
+    int code = http.POST("");
+    Serial.printf("POST %s -> %d\n", url.c_str(), code);
     http.end();
 }
 
-// Fire-and-forget hit to a POC receiver endpoint ("/known", "/unknown", "/off").
-static void notifyReceiver(const char* path) {
-    if (strlen(RECEIVER_BASE_URL) == 0) return;
-    if (WiFi.status() != WL_CONNECTED) return;
-
-    HTTPClient http;
-    String url = String(RECEIVER_BASE_URL) + path;
-    http.begin(url);
-    http.setConnectTimeout(800);   // don't stall long if the receiver is absent
-    http.setTimeout(800);
-    int code = http.POST("");
-    Serial.printf("POC %s -> %d\n", path, code);
-    http.end();
+// Notify both the POC lantern and this unit's remote API of a mode at once.
+static void notifyBoth(const char* path) {
+    notifyMode(RECEIVER_BASE_URL, path);   // POC lantern (local)
+    notifyMode(apiUrl.c_str(),    path);   // per-unit remote API
 }
 
 // -----------------------------------------------------------------------------
@@ -404,9 +388,9 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     alarmPlaysLeft = (cls == CLASS_KNOWN) ? 0 : (BAD_TRACK_PLAYS - 1);
     alarmLastPlay  = millis();
 
-    // Drive the POC receiver: /known for a good tape, /unknown for anything else.
-    notifyReceiver(cls == CLASS_KNOWN ? "/known" : "/unknown");
-    reportScan(cls, track, uid, len);
+    // Notify the POC lantern and the remote API: /known for a good tape,
+    // /unknown for anything else (the error tape maps to unknown too).
+    notifyBoth(cls == CLASS_KNOWN ? "/known" : "/unknown");
 }
 
 static void handleRemoval() {
@@ -414,7 +398,7 @@ static void handleRemoval() {
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
     FastLED.show();
     alarmPlaysLeft = 0;   // cancel any pending alarm replays
-    notifyReceiver("/off");
+    notifyBoth("/off");
     Serial.println("Cartridge removed.");
 }
 
