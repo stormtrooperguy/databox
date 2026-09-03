@@ -172,7 +172,7 @@ computer over USB and copy the audio files on. The module plays a track by its
 Naming the files with a numeric prefix (e.g. `01_known.mp3`, `02_other.mp3`,
 `03_special.mp3`) and copying them in that order keeps the index predictable.
 MP3/WAV/WMA are supported. The firmware sends the raw serial "play track N"
-command (`0x7E 0x03 … 0xEF`); no library is needed. Volume is max (30) at boot.
+command (`0x7E 0x03 … 0xEF`); no library is needed. Volume is set to 27/30 at boot.
 
 Track numbers are configurable in `src/main.cpp` (`TRACK_KNOWN`, `TRACK_OTHER`,
 and the `track` field of each `SPECIAL_TAPES` entry).
@@ -200,7 +200,7 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 - **POC receiver** — `RECEIVER_BASE_URL` (default `http://192.168.50.1`). On each
   scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
   `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
-- **Volume** — `AUDIO_VOLUME` (0–30; currently 30 = max).
+- **Volume** — `AUDIO_VOLUME` (0–30; currently 27 — max distorts a bit).
 - **Good tape** — self-registered at boot and saved to flash; `KNOWN_TAPES[]`
   is only the fallback when none was ever registered. See below.
 - **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue

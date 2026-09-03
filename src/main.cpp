@@ -94,7 +94,7 @@ static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
 static const char* RECEIVER_BASE_URL = "http://192.168.50.1";
 
 // DFR1173 volume (0-30)
-static const uint8_t AUDIO_VOLUME = 30;   // max
+static const uint8_t AUDIO_VOLUME = 27;   // ~90% of 30; full volume distorts
 
 // Audio tracks. Only two: track 1 for a known tape, track 2 for anything else
 // (unknown or the error tape). The DFR1173 plays by index number (the order
@@ -575,6 +575,17 @@ static void registerOrLoadGoodTape() {
     }
 
     if (found) {
+        // Don't register a special or error tape as the good tape (only a
+        // genuine good candidate) — fall through to the saved/fallback one.
+        uint16_t t = 0; uint32_t d = 0;
+        TapeClass c = classifyTape(uid, len, t, d);
+        if (c == CLASS_SPECIAL || c == CLASS_ERROR) {
+            Serial.println("Boot tape is special/error — not registering it as good.");
+            found = false;
+        }
+    }
+
+    if (found) {
         saveGoodTape(uid, len);
         goodRegistered = true;
         Serial.print("Good tape registered from boot scan: ");
@@ -594,7 +605,8 @@ static void registerOrLoadGoodTape() {
 // -----------------------------------------------------------------------------
 static void loadApiUrl() {
     prefs.begin("databox", true);                 // read-only
-    apiUrl = prefs.getString("apiUrl", API_URL);  // fall back to compiled default
+    apiUrl = prefs.isKey("apiUrl") ? prefs.getString("apiUrl", API_URL)
+                                   : String(API_URL);  // avoids a NOT_FOUND log
     prefs.end();
 }
 
@@ -737,6 +749,11 @@ void setup() {
                       (int)((ver >> 16) & 0xFF), (int)((ver >> 8) & 0xFF));
     }
     nfc.SAMConfig();   // required before reading passive targets
+
+    // Create the NVS namespace up front so the read-only loads below don't log
+    // "nvs_open failed: NOT_FOUND" on a brand-new (never-configured) unit.
+    prefs.begin("databox", false);
+    prefs.end();
 
     // Self-register the good tape if one is present at boot; otherwise load the
     // saved one (falls back to the built-in KNOWN_TAPES list if never set).
