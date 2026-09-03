@@ -177,6 +177,14 @@ command (`0x7E 0x03 … 0xEF`); no library is needed. Volume is max (30) at boot
 Track numbers are configurable in `src/main.cpp` (`TRACK_KNOWN`, `TRACK_OTHER`,
 and the `track` field of each `SPECIAL_TAPES` entry).
 
+To load (or reload) the audio onto a module, use the helper script — it copies
+the source files in order as `001/002/003.mp3` and strips macOS cruft:
+
+```bash
+tools/load-audio.sh          # /Volumes/NO NAME  <-  ~/Music/databox_audio
+tools/load-audio.sh -y       # skip the confirmation prompt
+```
+
 ---
 
 ## Configuration
