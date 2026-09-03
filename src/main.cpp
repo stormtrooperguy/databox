@@ -155,7 +155,10 @@ struct SpecialTape {
     uint32_t durationMs;   // how long to run the purple chase (~ track length)
 };
 static const SpecialTape SPECIAL_TAPES[] = {
-    { 7, {0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 3, 8000 },   // placeholder — replace
+    // "Rickroll" easter egg — every UID here triggers track 3. durationMs is just
+    // the safety cap (BUSY pin ends it at the real track end); ~215s > the ~3.5min clip.
+    { 4, {0x0A, 0xFC, 0xF1, 0x34}, 3, 215000 },
+    // add more rickroll UIDs here (same track 3, same duration)
 };
 static const size_t SPECIAL_TAPE_COUNT = sizeof(SPECIAL_TAPES) / sizeof(SPECIAL_TAPES[0]);
 
