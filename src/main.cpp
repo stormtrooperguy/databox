@@ -69,6 +69,7 @@
 // DFR1173 voice module (UART2). ESP TX(17) -> module RX, ESP RX(16) <- module TX.
 #define PIN_DF_RX        16    // ESP32 receives on this pin
 #define PIN_DF_TX        17    // ESP32 transmits on this pin
+#define PIN_DF_BUSY      27    // DFR1173 BUSY output -> ESP32 input (LOW = playing)
 
 // -----------------------------------------------------------------------------
 //  User configuration
@@ -222,6 +223,7 @@ static unsigned long specialStart     = 0;
 static unsigned long specialDuration  = 0;
 static uint8_t       purpleHead       = 0;
 static unsigned long purpleLastStep   = 0;
+static bool          specialBusySeen  = false; // BUSY confirmed the track started
 
 // -----------------------------------------------------------------------------
 //  DFR1173 voice module — raw serial command frames
@@ -402,6 +404,7 @@ static void startPurpleChase(uint32_t durationMs) {
     specialActive   = true;
     specialStart    = millis();
     specialDuration = durationMs;
+    specialBusySeen = false;
     purpleHead      = 0;
     purpleLastStep  = millis();
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
@@ -414,10 +417,19 @@ static void stopPurpleChase() {
     FastLED.show();
 }
 
-// Advances the purple comet each step; ends when the track duration elapses.
+// Advances the purple comet each step. Ends when the track finishes: the DFR1173
+// BUSY pin (LOW = playing) is the primary signal — once we've seen it go low
+// (playback started) we stop as soon as it returns high. If BUSY is never
+// asserted (pin not wired), it falls back to the per-tape durationMs cap.
 static void updatePurpleChase() {
     if (!specialActive) return;
-    if (millis() - specialStart >= specialDuration) {
+
+    bool playing = (digitalRead(PIN_DF_BUSY) == LOW);
+    if (playing) specialBusySeen = true;
+
+    bool doneByBusy = specialBusySeen && !playing;                 // played, now stopped
+    bool doneByCap  = (millis() - specialStart >= specialDuration);
+    if (doneByBusy || doneByCap) {
         stopPurpleChase();
         return;
     }
@@ -733,6 +745,7 @@ void setup() {
     Serial.println(apiUrl.length() ? apiUrl : String("(unset — use 'set url <endpoint>')"));
 
     // DFR1173 voice module.
+    pinMode(PIN_DF_BUSY, INPUT_PULLUP);   // BUSY: LOW = playing (used for chase sync)
     dfSerial.begin(9600, SERIAL_8N1, PIN_DF_RX, PIN_DF_TX);
     delay(200);
     audioSetVolume(AUDIO_VOLUME);

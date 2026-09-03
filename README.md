@@ -28,8 +28,8 @@ Sequence on insertion of a **known / unknown / error** tape:
    **matching audio track plays**.
 
 A **special** tape skips that sequence: it plays its own track and runs a
-**purple comet chase** on the 16-ring for the track's length (`durationMs`),
-with the reader LEDs dark and no API call. See
+**purple comet chase** on the 16-ring for as long as the track plays (synced via
+the DFR1173 BUSY pin), with the reader LEDs dark and no API call. See
 [Special / easter-egg tapes](#special--easter-egg-tapes).
 
 Continuous background behaviour:
@@ -95,6 +95,7 @@ Both timings are tunable near the top of `src/main.cpp`.
 | 3 white LEDs (gate)       | 14        |
 | DFR1173 RX (ESP → module) | 17        |
 | DFR1173 TX (module → ESP) | 16        |
+| DFR1173 BUSY (→ ESP)      | 27        |
 
 Notes:
 - Set the PN532 board's **mode switches to I2C** (SEL0/SEL1 per the board's silk).
@@ -102,9 +103,10 @@ Notes:
   I2C lines are 5V-tolerant — no level shifter needed. It shares the 5V rail with
   the LED rings and DFR1173.
 - Put a **~1kΩ resistor** in series between ESP32 TX (GPIO17) and the DFR1173 RX pin.
-- The DFR1173 also exposes a **BUSY** pin (low = playing) if you ever want the ESP32
-  to detect playback; it's unused here since audio is fire-and-forget so the light
-  animations keep running.
+- The DFR1173 **BUSY** pin (low = playing) is wired to **GPIO27** and used to sync
+  the special-tape purple chase to actual playback. Configured `INPUT_PULLUP`, so
+  if a unit is left unwired it reads "not playing" and the chase falls back to the
+  per-tape `durationMs` cap.
 - The 3 white LEDs are **pre-wired modules with built-in resistors rated for 9V**.
   They're driven at 5V here (tested — they light fine, just a little dimmer), so no
   extra series resistor is needed. Still switch them through a **transistor/MOSFET**
@@ -256,10 +258,10 @@ chase** on the 16-ring for `durationMs`, then the ring goes dark. Removing the
 tape stops the chase and the audio. Special tapes make **no API call** — they
 act only on the unit itself. Use track numbers **3+** (1 = known, 2 = other).
 
-**`durationMs` = the track's length.** The DFR1173's BUSY pin (true "is it still
-playing?" signal) isn't wired, so the chase is timed to this value rather than to
-actual playback — set it to roughly the clip length. (Wiring BUSY to a GPIO for
-real playback-sync is a small future change.)
+The chase is **synced to actual playback** via the DFR1173's BUSY pin (GPIO27):
+it ends when the track finishes. `durationMs` is a **safety cap / fallback** —
+used only if BUSY never asserts (pin unwired on that unit), so set it a bit
+**longer** than the clip (e.g. the rickroll is ~3.5 min, so ~215000).
 
 ### Per-unit endpoint (serial console)
 
