@@ -37,16 +37,16 @@ Continuous background behaviour:
 - The **five 7-LED rings** each blink white at **50% brightness** in an
   independent random pattern, emulating a 70s/80s sci-fi "thinking" computer.
   (All 7 LEDs in a ring act as one — they share colour covers.)
-- The **three white LEDs** are on once boot completes.
+- The **three white LEDs** come on immediately at power-up.
 - The device connects to **WiFi** at boot and reports each scan to a remote API
   (endpoint stubbed out for now).
 
-Startup sequence (reader LEDs double as status indicators):
+Startup sequence (visual feedback the whole way):
 
-1. WiFi join is attempted (up to 15 s).
-2. The reader LEDs flash **green ×3** if it connected, **red ×3** if it failed.
-3. The **white LEDs turn on** once that sequence finishes — either way — signalling
-   the device is ready.
+1. The **white LEDs light immediately** — power-on cue.
+2. The **16-ring fills** as a dim-white progress bar while WiFi connects (up to 15 s).
+3. The reader LEDs flash **green ×3** if it connected, **red ×3** if it failed, and
+   the ring clears — ready.
 
 ### Cartridge presence & debounce
 
@@ -92,7 +92,7 @@ Both timings are tunable near the top of `src/main.cpp`.
 | Reader red LED            | 25        |
 | 16-LED ring data          | 13        |
 | 5 × 7-LED rings data       | 4         |
-| 3 white LEDs (gate)       | 14        |
+| 3 white LEDs              | 14, 18, 19 |
 | DFR1173 RX (ESP → module) | 17        |
 | DFR1173 TX (module → ESP) | 16        |
 | DFR1173 BUSY (→ ESP)      | 27        |
@@ -109,8 +109,11 @@ Notes:
   per-tape `durationMs` cap.
 - The 3 white LEDs are **pre-wired modules with built-in resistors rated for 9V**.
   They're driven at 5V here (tested — they light fine, just a little dimmer), so no
-  extra series resistor is needed. Still switch them through a **transistor/MOSFET**
-  on GPIO14 rather than sourcing them off the pin directly.
+  extra series resistor is needed. Each is on **its own pin (14, 18, 19)** — the
+  firmware drives all three high, so this is backward-compatible with gen-1 units
+  that gang all three LEDs on GPIO14 (18/19 are just unused there). At ~7 mA each
+  they can be driven directly from the pins; use a **transistor/MOSFET** if you
+  gang several onto one pin.
 - Add the usual WS2812B protections: a **~470Ω** resistor in the data line and a
   **1000µF** cap across the strip's 5V/GND.
 

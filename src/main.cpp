@@ -28,11 +28,12 @@
 //      tape then replays its sequence.
 //
 //  The five 7-LED rings continuously blink white @ 50% in a random pattern to
-//  emulate a "thinking" 70s/80s sci-fi computer. WiFi connects at boot; the
-//  reader LEDs then flash green x3 (connected) or red x3 (failed) as a status
-//  cue, after which the three always-on white LEDs come on. Each scan's mode
-//  (known/unknown/off) is POSTed to both the POC lantern and this unit's remote
-//  API (a base URL set over the serial console; see notifyMode / apiUrl).
+//  emulate a "thinking" 70s/80s sci-fi computer. At boot the always-on white
+//  LEDs light immediately (power-on cue), the 16-ring fills as a progress bar
+//  while WiFi connects, then the reader LEDs flash green x3 (connected) or red x3
+//  (failed). Each scan's mode (known/unknown/off) is POSTed to both the POC
+//  lantern and this unit's remote API (a base URL set over serial; see
+//  notifyMode / apiUrl).
 // =============================================================================
 
 #include <Arduino.h>
@@ -63,8 +64,12 @@
 #define PIN_RING16       13    // the single 16-LED ring
 #define PIN_RINGS7       4     // the five 7-LED rings, chained (5 x 7 = 35 px)
 
-// The three always-on white LEDs (tie them to one gate/transistor on this pin)
-#define PIN_WHITE_LEDS   14
+// The three always-on white LEDs, each on its own pin. Driving all three works
+// for either wiring: gen-1 units gang all 3 LEDs on pin 14 (18/19 then unused);
+// gen-2+ puts one LED per pin.
+#define PIN_WHITE_LED_1  14
+#define PIN_WHITE_LED_2  18
+#define PIN_WHITE_LED_3  19
 
 // DFR1173 voice module (UART2). ESP TX(17) -> module RX, ESP RX(16) <- module TX.
 #define PIN_DF_RX        16    // ESP32 receives on this pin
@@ -192,6 +197,7 @@ static const CRGB THINK_OFF = CRGB::Black;
 static const CRGB COLOR_KNOWN   = CRGB(0,   0,   255);   // blue   (good)
 static const CRGB COLOR_ERROR   = CRGB(255, 0,   0);     // red    (not good)
 static const CRGB COLOR_WHITE   = CRGB(255, 255, 255);
+static const CRGB COLOR_WIFI    = CRGB(80,  80,  80);   // dim white — WiFi-connect progress
 static const CRGB COLOR_PURPLE  = CRGB(160, 0,   255);   // purple (special / easter-egg)
 static const uint16_t PURPLE_STEP_MS = 50;               // purple chase step speed
 
@@ -280,6 +286,12 @@ static void animateHold(uint32_t ms) {
 static void setReaderLeds(bool green, bool red) {
     digitalWrite(PIN_LED_GREEN, green ? HIGH : LOW);
     digitalWrite(PIN_LED_RED,   red   ? HIGH : LOW);
+}
+
+static void setWhiteLeds(bool on) {
+    digitalWrite(PIN_WHITE_LED_1, on ? HIGH : LOW);
+    digitalWrite(PIN_WHITE_LED_2, on ? HIGH : LOW);
+    digitalWrite(PIN_WHITE_LED_3, on ? HIGH : LOW);
 }
 
 // -----------------------------------------------------------------------------
@@ -690,6 +702,8 @@ static void flashStatus(bool green, uint8_t times) {
 }
 
 // Returns true if WiFi connected within the timeout.
+static const uint32_t WIFI_TIMEOUT_MS = 15000;
+
 static bool connectWifi() {
     Serial.printf("WiFi: connecting to \"%s\" ...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
@@ -698,11 +712,21 @@ static bool connectWifi() {
     }
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+    // Fill the 16-ring as a connect-progress bar while we wait (the wait loop is
+    // where the busy-wait happens, so this gives a live "something's happening").
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-        delay(250);
+    while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
+        uint32_t elapsed = millis() - start;
+        int lit = 1 + (int)((elapsed * RING16_COUNT) / WIFI_TIMEOUT_MS);
+        if (lit > RING16_COUNT) lit = RING16_COUNT;
+        fill_solid(ring16, RING16_COUNT, CRGB::Black);
+        for (int i = 0; i < lit; i++) ring16[i] = COLOR_WIFI;
+        FastLED.show();
+        delay(200);
         Serial.print('.');
     }
+    fill_solid(ring16, RING16_COUNT, CRGB::Black);   // clear the progress bar
+    FastLED.show();
     Serial.println();
     if (WiFi.status() == WL_CONNECTED) {
         Serial.print("WiFi: connected, IP ");
@@ -718,12 +742,14 @@ void setup() {
     delay(200);
     Serial.println("\nRFID Cartridge Player (databox) booting...");
 
-    // Reader status LEDs + always-on white LEDs.
+    // Reader status LEDs (off) + white LEDs ON immediately as a power-on cue.
     pinMode(PIN_LED_GREEN, OUTPUT);
     pinMode(PIN_LED_RED,   OUTPUT);
-    pinMode(PIN_WHITE_LEDS, OUTPUT);
     setReaderLeds(false, false);
-    // White LEDs come on after the WiFi join sequence completes (see below).
+    pinMode(PIN_WHITE_LED_1, OUTPUT);
+    pinMode(PIN_WHITE_LED_2, OUTPUT);
+    pinMode(PIN_WHITE_LED_3, OUTPUT);
+    setWhiteLeds(true);
 
     // WS2812B strips.
     FastLED.addLeds<WS2812B, PIN_RING16, GRB>(ring16, RING16_COUNT);
@@ -771,11 +797,10 @@ void setup() {
     audioSetVolume(AUDIO_VOLUME);
     Serial.println("DFR1173: volume set.");
 
-    // WiFi status on the reader LEDs: green x3 on success, red x3 on failure.
-    // The white LEDs then come on once the join sequence is done, either way.
+    // The 16-ring fills as a progress bar while connecting; then the reader LEDs
+    // flash green x3 on success, red x3 on failure. (White LEDs are already on.)
     bool wifiOk = connectWifi();
     flashStatus(wifiOk, 3);
-    digitalWrite(PIN_WHITE_LEDS, HIGH);
 
     Serial.println("Ready. Insert a cartridge.");
 }
