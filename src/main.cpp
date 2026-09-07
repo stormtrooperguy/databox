@@ -74,7 +74,9 @@
 // DFR1173 voice module (UART2). ESP TX(17) -> module RX, ESP RX(16) <- module TX.
 #define PIN_DF_RX        16    // ESP32 receives on this pin
 #define PIN_DF_TX        17    // ESP32 transmits on this pin
-#define PIN_DF_BUSY      27    // DFR1173 BUSY output -> ESP32 input (LOW = playing)
+#define PIN_DF_BUSY      5     // DFR1173 BUSY output -> ESP32 input (LOW = playing).
+                               // GPIO5 is a strapping pin, but BUSY idles HIGH at
+                               // boot so it satisfies the strap; fine as an input.
 
 // -----------------------------------------------------------------------------
 //  User configuration
