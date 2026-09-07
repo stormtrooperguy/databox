@@ -99,6 +99,9 @@ Both timings are tunable near the top of `src/main.cpp`.
 
 Notes:
 - Set the PN532 board's **mode switches to I2C** (SEL0/SEL1 per the board's silk).
+  If no reader responds at boot, the firmware logs it and continues with RFID
+  disabled (lights/loop still run) — reboot after wiring the reader. Handy for
+  bench-testing LED wiring without a PN532.
 - The PN532 runs from **5V** on the common breakouts (onboard regulator), and its
   I2C lines are 5V-tolerant — no level shifter needed. It shares the 5V rail with
   the LED rings and DFR1173.

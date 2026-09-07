@@ -219,6 +219,7 @@ static uint8_t       curUid[10];
 static uint8_t       curUidLen = 0;
 static unsigned long lastPoll  = 0;
 static uint8_t       missCount = 0;   // consecutive failed polls while a tape is present
+static bool          readerPresent = false; // PN532 detected at boot; false = RFID disabled
 
 // Bad-tape alarm scheduler (replays TRACK_OTHER a few times from loop()).
 static uint8_t       alarmPlaysLeft = 0;
@@ -764,17 +765,28 @@ void setup() {
         thinkNextToggle[r] = millis() + random(0, 400);
     }
 
-    // PN532 NFC reader (I2C).
+    // PN532 NFC reader (I2C). Probe the I2C address first (0x24): an absent reader
+    // NACKs instantly, whereas getFirmwareVersion() would hang ~100s on a dead bus
+    // (its timeout loop assumes fast reads, but each read blocks ~1s when nothing
+    // answers). Only talk to the library if something ACKs.
     Wire.begin(PIN_PN532_SDA, PIN_PN532_SCL);
-    nfc.begin();
-    uint32_t ver = nfc.getFirmwareVersion();
-    if (!ver) {
-        Serial.println("PN532: NOT found (check I2C wiring / mode switch).");
-    } else {
-        Serial.printf("PN532: found, firmware %d.%d\n",
-                      (int)((ver >> 16) & 0xFF), (int)((ver >> 8) & 0xFF));
+    Wire.setTimeOut(50);
+    Wire.beginTransmission(0x24);
+    bool pnAcked = (Wire.endTransmission() == 0);
+    if (pnAcked) {
+        nfc.begin();
+        uint32_t ver = nfc.getFirmwareVersion();
+        if (ver) {
+            readerPresent = true;
+            Serial.printf("PN532: found, firmware %d.%d\n",
+                          (int)((ver >> 16) & 0xFF), (int)((ver >> 8) & 0xFF));
+            nfc.SAMConfig();   // required before reading passive targets
+        }
     }
-    nfc.SAMConfig();   // required before reading passive targets
+    if (!readerPresent) {
+        Serial.println("PN532: NOT found — RFID disabled (check I2C wiring / mode "
+                       "switch). Lights and the rest still run; reboot after wiring it.");
+    }
 
     // Create the NVS namespace up front so the read-only loads below don't log
     // "nvs_open failed: NOT_FOUND" on a brand-new (never-configured) unit.
@@ -782,8 +794,12 @@ void setup() {
     prefs.end();
 
     // Self-register the good tape if one is present at boot; otherwise load the
-    // saved one (falls back to the built-in KNOWN_TAPES list if never set).
-    registerOrLoadGoodTape();
+    // saved one. Skipped when no reader is present (nothing to scan).
+    if (readerPresent) {
+        registerOrLoadGoodTape();
+    } else if (loadGoodTape()) {
+        goodRegistered = true;
+    }
 
     // Load this unit's remote API endpoint from flash (set over serial).
     loadApiUrl();
@@ -825,6 +841,13 @@ void loop() {
 
     // Special tape: advance the non-blocking purple chase for the track duration.
     updatePurpleChase();
+
+    // No reader detected at boot -> skip all RFID (keeps the lights running and
+    // avoids flooding the bus with timeouts). Reboot after wiring a reader.
+    if (!readerPresent) {
+        delay(5);
+        return;
+    }
 
     unsigned long now = millis();
     if (now - lastPoll < POLL_INTERVAL_MS) {
