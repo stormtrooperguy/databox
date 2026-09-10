@@ -28,6 +28,9 @@
 
 #include <Arduino.h>
 #include <FastLED.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include "secrets.h"   // WIFI_SSID / WIFI_PASSWORD (git-ignored)
 
 // -----------------------------------------------------------------------------
 //  Board types
@@ -118,6 +121,98 @@ static CRGB typeColor(BoardType t) {
 }
 
 // -----------------------------------------------------------------------------
+//  Networking — the console is a STATION on the (external) venue AP with a FIXED
+//  IP so the devices can reach it; it does NOT host the AP. Exposes the
+//  device endpoints /setN/{known,unknown,off} and an operator admin page at "/"
+//  for manual override if a portable misbehaves.
+// -----------------------------------------------------------------------------
+static const IPAddress CONSOLE_IP (192, 168, 50, 10);   // fixed; devices POST here
+static const IPAddress GATEWAY    (192, 168, 50,  1);
+static const IPAddress SUBNET     (255, 255, 255, 0);
+static const IPAddress DNS_SERVER (192, 168, 50,  1);
+
+enum SetState : uint8_t { S_DEFAULT, S_KNOWN, S_UNKNOWN };
+static volatile SetState setState[5] = { S_DEFAULT, S_DEFAULT, S_DEFAULT, S_DEFAULT, S_DEFAULT };
+
+AsyncWebServer server(80);
+
+static const char* stateName(SetState s) {
+    return s == S_KNOWN ? "known" : s == S_UNKNOWN ? "unknown" : "default";
+}
+
+static void applySet(int i, SetState s) {   // latched until changed again
+    if (i < 0 || i > 4) return;
+    setState[i] = s;
+    Serial.printf("Set %d -> %s\n", i + 1, stateName(s));
+}
+
+// Operator override page — shows each set's current state with manual controls.
+static String adminPage() {
+    String h = F("<!doctype html><html><head>"
+                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                 "<meta http-equiv='refresh' content='3'><title>databox console</title>"
+                 "<style>body{font-family:sans-serif;margin:1.2rem;background:#111;color:#eee}"
+                 "h1{font-size:1.15rem}.set{margin:.6rem 0;padding:.5rem .7rem;border:1px solid #333;"
+                 "border-radius:6px}.st{font-weight:bold}a{display:inline-block;margin:.3rem .3rem 0 0;"
+                 "padding:.3rem .7rem;border-radius:4px;text-decoration:none;color:#fff;background:#333}"
+                 "</style></head><body><h1>databox console &mdash; manual override</h1>");
+    for (int i = 0; i < 5; i++) {
+        String n = String(i + 1);
+        h += "<div class='set'>Set " + n + " &mdash; <span class='st'>" + stateName(setState[i]) + "</span><br>";
+        h += "<a href='/set" + n + "/off'>default</a>";
+        h += "<a href='/set" + n + "/known'>known</a>";
+        h += "<a href='/set" + n + "/unknown'>unknown</a></div>";
+    }
+    h += F("</body></html>");
+    return h;
+}
+
+static void setupWebServer() {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
+        r->send(200, "text/html", adminPage());
+    });
+    // Device endpoints + admin links (GET from a browser redirects back to "/").
+    for (int i = 0; i < 5; i++) {
+        String b = "/set" + String(i + 1);
+        server.on((b + "/known").c_str(), HTTP_ANY, [i](AsyncWebServerRequest* r) {
+            applySet(i, S_KNOWN);
+            if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "known");
+        });
+        server.on((b + "/unknown").c_str(), HTTP_ANY, [i](AsyncWebServerRequest* r) {
+            applySet(i, S_UNKNOWN);
+            if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "unknown");
+        });
+        server.on((b + "/off").c_str(), HTTP_ANY, [i](AsyncWebServerRequest* r) {
+            applySet(i, S_DEFAULT);
+            if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "off");
+        });
+    }
+    server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "not found"); });
+    server.begin();
+}
+
+static void connectWifi() {
+    Serial.printf("WiFi: connecting to \"%s\" ...\n", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    if (!WiFi.config(CONSOLE_IP, GATEWAY, SUBNET, DNS_SERVER)) {
+        Serial.println("WiFi: static IP config failed!");
+    }
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+        delay(250);
+        Serial.print('.');
+    }
+    Serial.println();
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("WiFi: connected, IP ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("WiFi: not connected (continuing offline).");
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Setup
 // -----------------------------------------------------------------------------
 void setup() {
@@ -157,7 +252,10 @@ void setup() {
         singleNext[i] = millis() + random(100, 800);
     }
 
-    Serial.println("Ready (scaffold: bring-up render by board type).");
+    connectWifi();
+    setupWebServer();
+    Serial.println("HTTP up: /setN/{known,unknown,off} + admin at /");
+    Serial.println("Ready (scaffold: default = bring-up by type; known=blue, unknown=red).");
 }
 
 // -----------------------------------------------------------------------------
@@ -177,7 +275,11 @@ void loop() {
     // TODO: replace this bring-up render with real per-type animations +
     // latched per-set known/unknown override, once wiring + endpoints land.
     for (size_t i = 0; i < NUM_BOARDS; i++) {
-        fill_solid(segs[i].base + segs[i].off, segs[i].count, typeColor(segs[i].type));
+        SetState st = setState[segs[i].set - 1];
+        CRGB c = (st == S_KNOWN)   ? CRGB(0, 0, 255)             // blue  (known)
+               : (st == S_UNKNOWN) ? CRGB(255, 0, 0)            // red   (not good)
+                                   : typeColor(segs[i].type);   // default (placeholder)
+        fill_solid(segs[i].base + segs[i].off, segs[i].count, c);
     }
     FastLED.show();
 

@@ -53,15 +53,28 @@ Set assignment (even spread, 8 boards each):
   that set's boards latch to **blue** (known) / **red** (unknown) until changed
   again (`/setN/off` → back to default). Singles are decorative only.
 
+## Networking
+
+The console is a **WiFi station on the venue AP** (external, higher-power — the
+console does **not** host it) with a **fixed IP `192.168.50.10`**, so the devices
+can always reach it. Each device is configured `set url http://192.168.50.10/setN`
+and POSTs `/known` `/unknown` `/off`. WiFi credentials live in git-ignored
+`src/secrets.h`. The portable devices are on **DHCP** (clients), so the fleet
+shares one AP without collisions.
+
+**Admin override:** browse to `http://192.168.50.10/` for an operator page showing
+each set's state with manual **default / known / unknown** controls — for
+forcing a set if a portable malfunctions. (Unauthenticated; local network only.)
+
 ## Status
 
-**Scaffold.** In place: the board table with set assignment, per-panel LED arrays
-+ power cap, a bring-up render (each board lit by type colour so wiring can be
-verified), and the decorative singles. **Next:** real per-type animations, the
-WiFi AP (`CSL_aurora`) + `/setN/{known,unknown,off}` endpoints with latched
-per-set state.
+**In place:** the board table with set assignment, per-panel LED arrays + power
+cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints with latched
+per-set state, the admin override page, and decorative singles. The render honors
+set state (known=blue, unknown=red); the **default** state is still the bring-up
+render (each board lit by type colour to verify wiring).
+
+**Next:** real per-type default animations (bar patterns/chases, solid smalls,
+medium/large comet chases).
 
 - **Data pins are provisional** (`PIN_P1..P5`) — finalise at wiring.
-- Networking: the console will host the AP the devices join; note the portable
-  units currently share static IP `192.168.50.10` and must move to DHCP before
-  they coexist on one network.
