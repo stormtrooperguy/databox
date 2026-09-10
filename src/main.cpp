@@ -84,11 +84,9 @@
 // WiFi credentials live in src/secrets.h (git-ignored). WIFI_SSID and
 // WIFI_PASSWORD are #defined there — copy secrets.h.example to secrets.h to set them.
 
-// Static IP for this unit on the venue network (192.168.50.0/24).
-static const IPAddress STATIC_IP  (192, 168, 50, 10);
-static const IPAddress GATEWAY    (192, 168, 50,  1);
-static const IPAddress SUBNET     (255, 255, 255, 0);
-static const IPAddress DNS_SERVER (192, 168, 50,  1);
+// The device is a WiFi client (it POSTs to the console). It uses DHCP so the
+// whole fleet can share one AP without IP collisions — the console holds the
+// fixed address, configured per unit via `set url http://<console-ip>/setN`.
 
 // Remote API — the compiled DEFAULT endpoint. Per unit this is overridden by a
 // value stored in flash (NVS), set over serial with "set url <endpoint>". Leave
@@ -710,10 +708,7 @@ static const uint32_t WIFI_TIMEOUT_MS = 15000;
 static bool connectWifi() {
     Serial.printf("WiFi: connecting to \"%s\" ...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
-    if (!WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS_SERVER)) {
-        Serial.println("WiFi: static IP config failed!");
-    }
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);   // DHCP — no static IP
 
     // Fill the 16-ring as a connect-progress bar while we wait (the wait loop is
     // where the busy-wait happens, so this gives a live "something's happening").

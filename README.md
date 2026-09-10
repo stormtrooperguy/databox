@@ -210,9 +210,9 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
 - **Volume** — `AUDIO_VOLUME` (0–30; currently 27 — max distorts a bit).
 - **Good tape** — self-registered at boot and saved to flash; `KNOWN_TAPES[]`
   is only the fallback when none was ever registered. See below.
-- **Network** — this unit uses a **static IP** on the `192.168.50.0/24` venue
-  network: `STATIC_IP` = `192.168.50.10`, `GATEWAY`/`DNS_SERVER` = `192.168.50.1`,
-  `SUBNET` = `255.255.255.0`. Adjust if the router isn't at `.1`.
+- **Network** — the device is a WiFi **client on DHCP** (joins the venue AP and
+  gets a dynamic IP), so the whole fleet coexists on one AP without collisions.
+  It POSTs to the **console's** fixed address, set per unit via `set url`.
 
 ### WiFi credentials (`secrets.h`)
 
