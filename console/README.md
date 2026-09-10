@@ -69,6 +69,91 @@ shares one AP without collisions.
 each set's state with manual **default / known / unknown** controls — for
 forcing a set if a portable malfunctions. (Unauthenticated; local network only.)
 
+## Wiring guide (recommended chains)
+
+**One data chain per panel.** Daisy-chain each panel's boards **DIN→DOUT in the
+order below** — position in the chain is what assigns each board to its set (from
+`BOARDS[]` in `src/main.cpp`). Wire in this order and the set spread is automatic;
+if you physically reorder, update `BOARDS[]` to match. `LEDs` is the pixel range
+that board occupies in its panel's array.
+
+**Panel 1 — GPIO13 (58 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 1 | 0–9 |
+| 2 | bar | 2 | 10–19 |
+| 3 | bar | 3 | 20–29 |
+| 4 | small | 1 | 30–36 |
+| 5 | small | 2 | 37–43 |
+| 6 | small | 3 | 44–50 |
+| 7 | small | 4 | 51–57 |
+
+**Panel 2 — GPIO14 (78 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 4 | 0–9 |
+| 2 | bar | 5 | 10–19 |
+| 3 | bar | 1 | 20–29 |
+| 4 | bar | 2 | 30–39 |
+| 5 | large | 1 | 40–63 |
+| 6 | small | 5 | 64–70 |
+| 7 | small | 4 | 71–77 |
+
+**Panel 3 — GPIO27 (97 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 3 | 0–9 |
+| 2 | bar | 4 | 10–19 |
+| 3 | bar | 5 | 20–29 |
+| 4 | bar | 1 | 30–39 |
+| 5 | bar | 2 | 40–49 |
+| 6 | bar | 3 | 50–59 |
+| 7 | medium | 2 | 60–75 |
+| 8 | small | 5 | 76–82 |
+| 9 | small | 1 | 83–89 |
+| 10 | small | 2 | 90–96 |
+
+**Panel 4 — GPIO26 (122 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 4 | 0–9 |
+| 2 | bar | 5 | 10–19 |
+| 3 | bar | 1 | 20–29 |
+| 4 | bar | 2 | 30–39 |
+| 5 | bar | 3 | 40–49 |
+| 6 | bar | 4 | 50–59 |
+| 7 | medium | 3 | 60–75 |
+| 8 | medium | 4 | 76–91 |
+| 9 | medium | 5 | 92–107 |
+| 10 | small | 3 | 108–114 |
+| 11 | small | 4 | 115–121 |
+
+**Panel 5 — GPIO25 (47 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 5 | 0–9 |
+| 2 | bar | 1 | 10–19 |
+| 3 | bar | 2 | 20–29 |
+| 4 | bar | 3 | 30–39 |
+| 5 | small | 5 | 40–46 |
+
+**Singles** — 4 plain LEDs, each on its own GPIO (not chained): **16, 17, 18, 19**.
+Decorative random blink; pin↔LED mapping is arbitrary (2 belong in panel 1, 2 in
+panel 3 physically).
+
+Notes:
+- Only **data + GND** come from the ESP32 pin; feed **5 V power separately** to
+  each chain (inject at both ends / every ~100–150 px so the far end doesn't dim).
+- At boot the console prints each panel's LED count — a quick way to catch a
+  miscount or a board wired out of order.
+- Use the **admin page** to drive each set and confirm boards light where expected
+  before connecting the devices.
+
 ## Status
 
 **Feature-complete (untested on hardware).** In place: the board table with set
