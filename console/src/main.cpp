@@ -109,16 +109,6 @@ static bool          singleOn[NUM_SINGLES];
 struct Seg { CRGB* base; uint16_t off; uint16_t count; BoardType type; uint8_t set; };
 static Seg segs[NUM_BOARDS];
 
-// Per-type bring-up colours (so each board type is identifiable while wiring).
-static CRGB typeColor(BoardType t) {
-    switch (t) {
-        case BAR:    return CRGB(0,   80,  0);    // green
-        case SMALL:  return CRGB(0,   0,   80);   // blue
-        case MEDIUM: return CRGB(80,  40,  0);    // amber
-        case LARGE:  return CRGB(60,  0,   80);   // purple
-    }
-    return CRGB::Black;
-}
 
 // -----------------------------------------------------------------------------
 //  Networking — the console is a STATION on the (external) venue AP with a FIXED
@@ -213,6 +203,86 @@ static void connectWifi() {
 }
 
 // -----------------------------------------------------------------------------
+//  Animations  (per board type x per set state)
+// -----------------------------------------------------------------------------
+static const CRGB COLOR_KNOWN  = CRGB(0, 0, 255);      // blue
+static const CRGB COLOR_BAD    = CRGB(255, 0, 0);      // red
+// small idle blink palette: white / amber / green
+static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0), CRGB(0,150,0) };
+static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
+static const uint8_t  COMET_FADE    = 64;   // comet tail fade per step
+static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
+
+struct Anim {
+    SetState lastState;
+    bool     blinkOn;      // small idle
+    uint32_t blinkNext;
+    CRGB     blinkColor;
+    uint8_t  head;         // comet head position
+    uint32_t cometLast;    // comet step timestamp
+};
+static Anim anim[NUM_BOARDS];
+
+static inline CRGB* segLeds(size_t i) { return segs[i].base + segs[i].off; }
+
+// small idle: whole ring blinks white/amber/green on a random schedule
+static void animSmallIdle(size_t i) {
+    Anim& a = anim[i];
+    uint32_t now = millis();
+    if (now >= a.blinkNext) {
+        a.blinkOn = !a.blinkOn;
+        if (a.blinkOn) a.blinkColor = SMALL_IDLE[random(3)];
+        a.blinkNext = now + (a.blinkOn ? random(90, 350) : random(150, 700));
+    }
+    fill_solid(segLeds(i), segs[i].count, a.blinkOn ? a.blinkColor : CRGB::Black);
+}
+
+// small active: breathing pulse in `base` (per-board phase offset so they differ)
+static void animPulse(size_t i, const CRGB& base) {
+    uint8_t v = beatsin8(28, 30, 255, 0, (uint8_t)(i * 24));
+    CRGB c = base;
+    c.nscale8_video(v);
+    fill_solid(segLeds(i), segs[i].count, c);
+}
+
+// idle flash: colourful random twinkle (medium/large/bar)
+static void animTwinkle(size_t i) {
+    CRGB* leds = segLeds(i);
+    fadeToBlackBy(leds, segs[i].count, TWINKLE_FADE);
+    if (random8() < 70) leds[random(segs[i].count)] = CHSV(random8(), 255, 255);
+}
+
+// comet chase in `base`: rings wrap circularly, bars sweep left->right & repeat
+static void animComet(size_t i, const CRGB& base) {
+    Anim& a = anim[i];
+    uint32_t now = millis();
+    if (now - a.cometLast >= COMET_STEP_MS) {
+        a.cometLast = now;
+        CRGB* leds = segLeds(i);
+        fadeToBlackBy(leds, segs[i].count, COMET_FADE);
+        leds[a.head] = base;
+        a.head = (a.head + 1) % segs[i].count;
+    }
+}
+
+// Render one board for the current state of its set.
+static void renderBoard(size_t i) {
+    SetState st = setState[segs[i].set - 1];
+    Anim& a = anim[i];
+    if (st != a.lastState) {                 // clean transition
+        fill_solid(segLeds(i), segs[i].count, CRGB::Black);
+        a.head = 0; a.cometLast = 0; a.blinkOn = false; a.blinkNext = 0;
+        a.lastState = st;
+    }
+    const CRGB& active = (st == S_KNOWN) ? COLOR_KNOWN : COLOR_BAD;
+    if (segs[i].type == SMALL) {
+        if (st == S_DEFAULT) animSmallIdle(i); else animPulse(i, active);
+    } else {                                 // bar / medium / large
+        if (st == S_DEFAULT) animTwinkle(i); else animComet(i, active);
+    }
+}
+
+// -----------------------------------------------------------------------------
 //  Setup
 // -----------------------------------------------------------------------------
 void setup() {
@@ -252,6 +322,16 @@ void setup() {
         singleNext[i] = millis() + random(100, 800);
     }
 
+    // Per-board animation state.
+    for (size_t i = 0; i < NUM_BOARDS; i++) {
+        anim[i].lastState  = S_DEFAULT;
+        anim[i].blinkOn    = false;
+        anim[i].blinkNext  = millis() + random(0, 500);
+        anim[i].blinkColor = SMALL_IDLE[0];
+        anim[i].head       = random(segs[i].count);   // desync comets
+        anim[i].cometLast  = 0;
+    }
+
     connectWifi();
     setupWebServer();
     Serial.println("HTTP up: /setN/{known,unknown,off} + admin at /");
@@ -272,15 +352,7 @@ static void updateSingles() {
 }
 
 void loop() {
-    // TODO: replace this bring-up render with real per-type animations +
-    // latched per-set known/unknown override, once wiring + endpoints land.
-    for (size_t i = 0; i < NUM_BOARDS; i++) {
-        SetState st = setState[segs[i].set - 1];
-        CRGB c = (st == S_KNOWN)   ? CRGB(0, 0, 255)             // blue  (known)
-               : (st == S_UNKNOWN) ? CRGB(255, 0, 0)            // red   (not good)
-                                   : typeColor(segs[i].type);   // default (placeholder)
-        fill_solid(segs[i].base + segs[i].off, segs[i].count, c);
-    }
+    for (size_t i = 0; i < NUM_BOARDS; i++) renderBoard(i);
     FastLED.show();
 
     updateSingles();

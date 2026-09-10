@@ -47,11 +47,14 @@ Set assignment (even spread, 8 boards each):
 
 ## Behaviour
 
-- **Default:** bars flash color patterns/chases, small rings hold a solid colour,
-  medium/large rings do multi-colour comet chases, singles blink randomly.
-- **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`;
-  that set's boards latch to **blue** (known) / **red** (unknown) until changed
-  again (`/setN/off` → back to default). Singles are decorative only.
+- **Default (idle):** small rings **blink** in random white/amber/green; medium,
+  large, and bars run a colourful random **twinkle**; singles blink randomly.
+- **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
+  and that set latches until changed (`/setN/off` → default):
+  - small rings **pulse** (breathing)
+  - medium/large **comet chase**; bars a **left→right comet sweep**
+  - colour is **blue** (known) / **red** (unknown)
+  - singles are decorative only — not part of the set response.
 
 ## Networking
 
@@ -68,13 +71,13 @@ forcing a set if a portable malfunctions. (Unauthenticated; local network only.)
 
 ## Status
 
-**In place:** the board table with set assignment, per-panel LED arrays + power
-cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints with latched
-per-set state, the admin override page, and decorative singles. The render honors
-set state (known=blue, unknown=red); the **default** state is still the bring-up
-render (each board lit by type colour to verify wiring).
+**Feature-complete (untested on hardware).** In place: the board table with set
+assignment, per-panel LED arrays + power cap, WiFi (static IP) +
+`/setN/{known,unknown,off}` endpoints with latched per-set state, the admin
+override page, decorative singles, and the full per-type animations (idle blink/
+twinkle; pulse + comet on known/unknown).
 
-**Next:** real per-type default animations (bar patterns/chases, solid smalls,
-medium/large comet chases).
-
-- **Data pins are provisional** (`PIN_P1..P5`) — finalise at wiring.
+- **Data pins are provisional** (`PIN_P1..P5`) — finalise at wiring, then flash
+  and bring-up test with the admin page.
+- Animation tunables live at the top of the Animations section in
+  `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `TWINKLE_FADE`, palettes).
