@@ -1,6 +1,6 @@
 # databox control console
 
-The ESP32-driven console the portable devices talk to: ~402 addressable LEDs
+The ESP32-driven console the portable devices talk to: 442 addressable LEDs
 across **5 panels**, plus 4 plain "single" LEDs. Separate PlatformIO project from
 the portable reader (`../`).
 
@@ -18,14 +18,16 @@ the portable reader (`../`).
 
 | Panel | bar | small | medium | large | single |
 |---|--|--|--|--|--|
-| 1 | 3 | 4 | – | – | 2 |
+| 1 | 5 | 4 | – | – | 2 |
 | 2 | 4 | 2 | – | 1 | – |
 | 3 | 6 | 3 | 1 | – | 2 |
 | 4 | 6 | 2 | 3 | – | – |
-| 5 | 4 | 1 | – | – | – |
-| **Total** | 23 | 12 | 4 | 1 | 4 |
+| 5 | 6 | 1 | – | – | – |
+| **Total** | 27 | 12 | 4 | 1 | 4 |
 
-**402 addressable pixels** (worst-case ~24 A → `setMaxPowerInVoltsAndMilliamps(5, 9000)` caps it under the 10 A supply).
+**44 addressable boards / 442 pixels** (worst-case ~26.5 A →
+`setMaxPowerInVoltsAndMilliamps(5, 9000)` caps it under the 10 A supply). On
+panels 1 and 5 the last two bars are at the **end of the chain** for easier assembly.
 
 ## Three independent groupings
 
@@ -35,15 +37,18 @@ the portable reader (`../`).
   **spread across panels** so a device lights the whole console, and every board
   belongs to exactly one set. See `BOARDS[]` in `src/main.cpp`.
 
-Set assignment (even spread, 8 boards each):
+Set assignment (even spread — 8 or 9 boards each):
 
-| Set | bar | small | medium | large | panels |
-|---|--|--|--|--|--|
-| 1 | 5 | 2 | – | 1 | 1,2,3,4,5 |
-| 2 | 5 | 2 | 1 | – | 1,2,3,4,5 |
-| 3 | 5 | 2 | 1 | – | 1,3,4,5 |
-| 4 | 4 | 3 | 1 | – | 1,2,3,4 |
-| 5 | 4 | 3 | 1 | – | 2,3,4,5 |
+| Set | bar | small | medium | large | boards | panels |
+|---|--|--|--|--|--|--|
+| 1 | 5 | 2 | – | 1 | 8 | 1,2,3,4,5 |
+| 2 | 6 | 2 | 1 | – | 9 | 1,2,3,4,5 |
+| 3 | 6 | 2 | 1 | – | 9 | 1,3,4,5 |
+| 4 | 5 | 3 | 1 | – | 9 | 1,2,3,4,5 |
+| 5 | 5 | 3 | 1 | – | 9 | 1,2,3,4,5 |
+
+The four late-added end-of-chain bars went to sets 5 and 3 (panel 1) and sets 4
+and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 
 ## Behaviour
 
@@ -56,6 +61,25 @@ Set assignment (even spread, 8 boards each):
   - colour is **blue** (known) / **red** (unknown)
   - singles are decorative only — not part of the set response.
 
+### Failure mode
+
+An operator can trigger a failure from the admin page (**trigger failure**, or
+`GET`/`POST /fail`):
+
+- **~30% of the boards flash red** (300 ms on/off), picked at random **per set** —
+  2–3 boards in each set — so every device has something to repair.
+- A failed board **keeps flashing red until its own set receives `/known`** — i.e.
+  the good cartridge in the device for that set (the admin page's manual **known**
+  button counts too). Boards repair per set: set 3's cartridge only fixes set 3's
+  boards, and they resume the normal known animation (blue comet) once fixed.
+- `unknown` and `off` do **not** clear a failure; failed boards keep flashing while
+  the rest of their set follows its normal state.
+- If a set's cartridge is already sitting in its device when the failure hits, pull
+  it and re-insert it (a fresh `/known` is what repairs).
+- Triggering again re-rolls a fresh selection. Singles aren't part of this.
+- The admin page shows how many boards are failing, overall and per set.
+  Tunables: `FAIL_PERCENT`, `FAIL_FLASH_MS`.
+
 ## Networking
 
 The console is a **WiFi station on the venue AP** (external, higher-power — the
@@ -67,7 +91,8 @@ shares one AP without collisions.
 
 **Admin override:** browse to `http://192.168.50.10/` for an operator page showing
 each set's state with manual **default / known / unknown** controls — for
-forcing a set if a portable malfunctions. (Unauthenticated; local network only.)
+forcing a set if a portable malfunctions — plus the **trigger failure** link.
+(Unauthenticated; local network only.)
 
 ## Wiring guide (recommended chains)
 
@@ -77,7 +102,7 @@ order below** — position in the chain is what assigns each board to its set (f
 if you physically reorder, update `BOARDS[]` to match. `LEDs` is the pixel range
 that board occupies in its panel's array.
 
-**Panel 1 — GPIO13 (58 px)**
+**Panel 1 — GPIO13 (78 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
@@ -88,6 +113,8 @@ that board occupies in its panel's array.
 | 5 | small | 2 | 37–43 |
 | 6 | small | 3 | 44–50 |
 | 7 | small | 4 | 51–57 |
+| 8 | bar (end of chain) | 5 | 58–67 |
+| 9 | bar (end of chain) | 3 | 68–77 |
 
 **Panel 2 — GPIO14 (78 px)**
 
@@ -132,7 +159,7 @@ that board occupies in its panel's array.
 | 10 | small | 3 | 108–114 |
 | 11 | small | 4 | 115–121 |
 
-**Panel 5 — GPIO25 (47 px)**
+**Panel 5 — GPIO25 (67 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
@@ -141,6 +168,8 @@ that board occupies in its panel's array.
 | 3 | bar | 2 | 20–29 |
 | 4 | bar | 3 | 30–39 |
 | 5 | small | 5 | 40–46 |
+| 6 | bar (end of chain) | 4 | 47–56 |
+| 7 | bar (end of chain) | 2 | 57–66 |
 
 **Singles** — 4 plain LEDs, each on its own GPIO (not chained): **16, 17, 18, 19**.
 Decorative random blink; pin↔LED mapping is arbitrary (2 belong in panel 1, 2 in

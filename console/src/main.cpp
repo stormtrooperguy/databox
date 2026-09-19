@@ -1,7 +1,7 @@
 // =============================================================================
 //  databox control console  —  ESP32 + addressable-LED panel
 // =============================================================================
-//  The console the portable devices talk to. It has ~402 WS2812 pixels across
+//  The console the portable devices talk to. It has 442 WS2812 pixels across
 //  five physical PANELS, made of reusable board types:
 //     bar    = 10-px strip     small = 7-px ring
 //     medium = 16-px ring      large = 24-px ring
@@ -14,16 +14,17 @@
 //                      Sets are spread across panels (a device lights the whole
 //                      console, not one panel). Every board belongs to exactly one set.
 //
-//  Default mode: bars flash color patterns/chases, small rings hold a solid
-//  colour, medium/large rings do multi-colour comet chases, singles blink
-//  randomly. When a device activates its set (/setN/known|unknown), that set's
-//  boards LATCH to blue (known) / red (unknown) until changed again (/off ->
-//  back to default). Singles are decorative only — not part of the set response.
+//  Default mode: small rings blink white/amber/green; medium, large and bars
+//  twinkle random colours; singles blink randomly. When a device activates its
+//  set (/setN/known|unknown), that set's boards LATCH to blue (known) / red
+//  (unknown) until changed again (/off -> back to default). Singles are
+//  decorative only — not part of the set response.
 //
-//  SCOPE: this is the scaffold — the board table (with set assignment) plus a
-//  bring-up render (each board lit by type so wiring can be verified) and the
-//  decorative singles. Real per-type animations and the WiFi AP + /setN endpoints
-//  come next. Physical pins below are PROVISIONAL — finalise at wiring time.
+//  FAILURE mode (operator, GET/POST /fail): ~30% of the boards — picked per set,
+//  so every device has something to fix — flash red and override their normal
+//  animation. A board stays failed until its own set receives /known (the matching
+//  device's good cartridge, or the admin page's manual "known"). Unknown/off do
+//  not clear it.
 // =============================================================================
 
 #include <Arduino.h>
@@ -56,9 +57,10 @@ struct Board {
 };
 
 static const Board BOARDS[] = {
-    // ---- Panel 1: 3 bar, 4 small ----
+    // ---- Panel 1: 5 bar, 4 small (the last 2 bars sit at the END of the chain) ----
     { BAR,   1, 1 }, { BAR,   1, 2 }, { BAR,   1, 3 },
     { SMALL, 1, 1 }, { SMALL, 1, 2 }, { SMALL, 1, 3 }, { SMALL, 1, 4 },
+    { BAR,   1, 5 }, { BAR,   1, 3 },
     // ---- Panel 2: 4 bar, 1 large, 2 small ----
     { BAR,   2, 4 }, { BAR,   2, 5 }, { BAR,   2, 1 }, { BAR,   2, 2 },
     { LARGE, 2, 1 },
@@ -71,9 +73,10 @@ static const Board BOARDS[] = {
     { BAR,   4, 4 }, { BAR,   4, 5 }, { BAR,   4, 1 }, { BAR,   4, 2 }, { BAR, 4, 3 }, { BAR, 4, 4 },
     { MEDIUM,4, 3 }, { MEDIUM,4, 4 }, { MEDIUM,4, 5 },
     { SMALL, 4, 3 }, { SMALL, 4, 4 },
-    // ---- Panel 5: 4 bar, 1 small ----
+    // ---- Panel 5: 6 bar, 1 small (the last 2 bars sit at the END of the chain) ----
     { BAR,   5, 5 }, { BAR,   5, 1 }, { BAR,   5, 2 }, { BAR,   5, 3 },
     { SMALL, 5, 5 },
+    { BAR,   5, 4 }, { BAR,   5, 2 },
 };
 static const size_t NUM_BOARDS = sizeof(BOARDS) / sizeof(BOARDS[0]);
 
@@ -81,11 +84,11 @@ static const size_t NUM_BOARDS = sizeof(BOARDS) / sizeof(BOARDS[0]);
 //  Physical layout — one chain (data pin) per panel. PROVISIONAL pins.
 //  Sizes must match the addressable LED count of each panel's boards.
 // -----------------------------------------------------------------------------
-#define P1_LEDS  58    // 3*10 + 4*7
+#define P1_LEDS  78    // 5*10 + 4*7
 #define P2_LEDS  78    // 4*10 + 24 + 2*7
 #define P3_LEDS  97    // 6*10 + 16 + 3*7
 #define P4_LEDS 122    // 6*10 + 3*16 + 2*7
-#define P5_LEDS  47    // 4*10 + 7
+#define P5_LEDS  67    // 6*10 + 7
 
 static CRGB p1[P1_LEDS], p2[P2_LEDS], p3[P3_LEDS], p4[P4_LEDS], p5[P5_LEDS];
 static CRGB* const   PANEL_LEDS[5]  = { p1, p2, p3, p4, p5 };
@@ -124,6 +127,12 @@ static const IPAddress DNS_SERVER (192, 168, 50,  1);
 enum SetState : uint8_t { S_DEFAULT, S_KNOWN, S_UNKNOWN };
 static volatile SetState setState[5] = { S_DEFAULT, S_DEFAULT, S_DEFAULT, S_DEFAULT, S_DEFAULT };
 
+// Failure mode. failed[b] = board b is flashing red until its set gets /known.
+// The web handlers only raise the request flags below; loop() does the work.
+static volatile bool failed[NUM_BOARDS];
+static volatile bool pendingFail = false;         // operator hit /fail
+static volatile bool pendingFix[5] = { false, false, false, false, false };  // set got /known
+
 AsyncWebServer server(80);
 
 static const char* stateName(SetState s) {
@@ -133,6 +142,7 @@ static const char* stateName(SetState s) {
 static void applySet(int i, SetState s) {   // latched until changed again
     if (i < 0 || i > 4) return;
     setState[i] = s;
+    if (s == S_KNOWN) pendingFix[i] = true;  // a known cartridge repairs this set's failures
     Serial.printf("Set %d -> %s\n", i + 1, stateName(s));
 }
 
@@ -145,10 +155,26 @@ static String adminPage() {
                  "h1{font-size:1.15rem}.set{margin:.6rem 0;padding:.5rem .7rem;border:1px solid #333;"
                  "border-radius:6px}.st{font-weight:bold}a{display:inline-block;margin:.3rem .3rem 0 0;"
                  "padding:.3rem .7rem;border-radius:4px;text-decoration:none;color:#fff;background:#333}"
+                 "a.fail{background:#b00020}.bad{color:#ff5252}"
                  "</style></head><body><h1>databox console &mdash; manual override</h1>");
+
+    // Failure status: how many boards are flashing red, and per set.
+    int failBySet[5] = { 0, 0, 0, 0, 0 };
+    int failTotal = 0;
+    for (size_t b = 0; b < NUM_BOARDS; b++) {
+        if (failed[b]) { failTotal++; failBySet[segs[b].set - 1]++; }
+    }
+    h += "<div class='set'>Failure &mdash; ";
+    if (failTotal) h += "<span class='st bad'>" + String(failTotal) + " of " + String((int)NUM_BOARDS) +
+                        " boards flashing red</span> (each set's known cartridge fixes its own)";
+    else           h += "<span class='st'>none</span>";
+    h += "<br><a class='fail' href='/fail'>trigger failure</a></div>";
+
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
-        h += "<div class='set'>Set " + n + " &mdash; <span class='st'>" + stateName(setState[i]) + "</span><br>";
+        h += "<div class='set'>Set " + n + " &mdash; <span class='st'>" + stateName(setState[i]) + "</span>";
+        if (failBySet[i]) h += " &mdash; <span class='st bad'>" + String(failBySet[i]) + " failing</span>";
+        h += "<br>";
         h += "<a href='/set" + n + "/off'>default</a>";
         h += "<a href='/set" + n + "/known'>known</a>";
         h += "<a href='/set" + n + "/unknown'>unknown</a></div>";
@@ -177,6 +203,11 @@ static void setupWebServer() {
             if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "off");
         });
     }
+    // Operator: trigger a failure (GET from the admin page redirects back).
+    server.on("/fail", HTTP_ANY, [](AsyncWebServerRequest* r) {
+        pendingFail = true;
+        if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "failure triggered");
+    });
     server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "not found"); });
     server.begin();
 }
@@ -213,8 +244,12 @@ static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
 static const uint8_t  COMET_FADE    = 64;   // comet tail fade per step
 static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
 
+static const uint8_t  FAIL_PERCENT  = 30;    // ~% of each set's boards that fail
+static const uint16_t FAIL_FLASH_MS = 300;   // failure flash half-period
+
 struct Anim {
     SetState lastState;
+    bool     wasFailed;    // was flashing red last frame (forces a clean restart on repair)
     bool     blinkOn;      // small idle
     uint32_t blinkNext;
     CRGB     blinkColor;
@@ -265,10 +300,52 @@ static void animComet(size_t i, const CRGB& base) {
     }
 }
 
+// Fail ~FAIL_PERCENT% of the boards in EACH set (min 1), chosen at random, so every
+// device has something to repair. Replaces any earlier failure selection.
+static void triggerFailure() {
+    for (size_t b = 0; b < NUM_BOARDS; b++) failed[b] = false;
+    size_t total = 0;
+    for (int s = 1; s <= 5; s++) {
+        size_t idx[NUM_BOARDS];
+        size_t n = 0;
+        for (size_t b = 0; b < NUM_BOARDS; b++) if (segs[b].set == s) idx[n++] = b;
+        if (n == 0) continue;
+        size_t k = (n * FAIL_PERCENT + 50) / 100;     // rounded
+        if (k < 1) k = 1;
+        for (size_t j = 0; j < k; j++) {              // partial Fisher-Yates shuffle
+            size_t r = j + (size_t)random((long)(n - j));
+            size_t tmp = idx[j]; idx[j] = idx[r]; idx[r] = tmp;
+            failed[idx[j]] = true;
+            total++;
+        }
+    }
+    Serial.printf("FAILURE triggered: %u of %u boards flashing red\n",
+                  (unsigned)total, (unsigned)NUM_BOARDS);
+}
+
+// A known cartridge on set `s` (0-4) repairs that set's failed boards.
+static void repairSet(int s) {
+    unsigned fixed = 0;
+    for (size_t b = 0; b < NUM_BOARDS; b++) {
+        if (segs[b].set == s + 1 && failed[b]) { failed[b] = false; fixed++; }
+    }
+    if (fixed) Serial.printf("Set %d known: repaired %u board(s)\n", s + 1, fixed);
+}
+
 // Render one board for the current state of its set.
 static void renderBoard(size_t i) {
-    SetState st = setState[segs[i].set - 1];
     Anim& a = anim[i];
+    if (failed[i]) {                         // failure overrides the set's animation
+        bool on = ((millis() / FAIL_FLASH_MS) & 1) == 0;
+        fill_solid(segLeds(i), segs[i].count, on ? COLOR_BAD : CRGB::Black);
+        a.wasFailed = true;
+        return;
+    }
+    if (a.wasFailed) {                       // just repaired: restart cleanly
+        a.wasFailed = false;
+        a.lastState = (SetState)0xFF;        // != any real state -> forces the reset below
+    }
+    SetState st = setState[segs[i].set - 1];
     if (st != a.lastState) {                 // clean transition
         fill_solid(segLeds(i), segs[i].count, CRGB::Black);
         a.head = 0; a.cometLast = 0; a.blinkOn = false; a.blinkNext = 0;
@@ -325,6 +402,8 @@ void setup() {
     // Per-board animation state.
     for (size_t i = 0; i < NUM_BOARDS; i++) {
         anim[i].lastState  = S_DEFAULT;
+        anim[i].wasFailed  = false;
+        failed[i]          = false;
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
         anim[i].blinkColor = SMALL_IDLE[0];
@@ -352,6 +431,12 @@ static void updateSingles() {
 }
 
 void loop() {
+    // Apply requests raised by the HTTP handlers (all LED/failure state is owned here).
+    if (pendingFail) { pendingFail = false; triggerFailure(); }
+    for (int s = 0; s < 5; s++) {
+        if (pendingFix[s]) { pendingFix[s] = false; repairSet(s); }
+    }
+
     for (size_t i = 0; i < NUM_BOARDS; i++) renderBoard(i);
     FastLED.show();
 
