@@ -238,7 +238,6 @@ static void connectWifi() {
 // -----------------------------------------------------------------------------
 static const CRGB COLOR_KNOWN  = CRGB(0, 0, 255);      // blue
 static const CRGB COLOR_BAD    = CRGB(255, 0, 0);      // red
-// small idle blink palette: white / amber / green
 // small-ring idle palette (independent of the bar/ring twinkle palette below)
 static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0),
                                    CRGB(0,150,0), CRGB(0,70,190) };  // white/amber/green/blue
@@ -250,6 +249,12 @@ static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
 static const uint8_t  COMET_FADE    = 64;   // comet tail fade per step
 static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
 
+// medium/large "pressure gauge" idle: green ring with a fluctuating yellow arc
+static const CRGB     GAUGE_OK       = CRGB(0, 150, 0);     // green  — nominal
+static const CRGB     GAUGE_WARN     = CRGB(255, 190, 0);   // yellow — slight warning
+static const uint16_t GAUGE_STEP_MS  = 110;  // how fast the level sweeps (ms per pixel)
+static const uint16_t ERROR_FLASH_MS = 250;  // medium/large unknown-state flash half-period
+
 static const uint8_t  FAIL_PERCENT  = 30;    // ~% of each set's boards that fail
 static const uint16_t FAIL_FLASH_MS = 300;   // failure flash half-period
 
@@ -258,6 +263,10 @@ struct Anim {
     bool     wasFailed;    // was flashing red last frame (forces a clean restart on repair)
     bool     blinkOn;      // small idle
     uint32_t blinkNext;
+    uint8_t  gaugeLvl;         // medium/large gauge: yellow pixels shown now
+    uint8_t  gaugeTarget;      // ...level it is easing toward
+    uint32_t gaugeNextTarget;  // when to pick a new target
+    uint32_t gaugeLastStep;    // last one-pixel move
     CRGB     blinkColor;
     uint8_t  head;         // comet head position
     uint32_t cometLast;    // comet step timestamp
@@ -305,6 +314,35 @@ static void animComet(size_t i, const CRGB& base) {
     }
 }
 
+// Whole board flashing one colour (used by failure mode and medium/large errors).
+static void animFlash(size_t i, const CRGB& c, uint16_t halfPeriodMs) {
+    bool on = ((millis() / halfPeriodMs) & 1) == 0;
+    fill_solid(segLeds(i), segs[i].count, on ? c : CRGB::Black);
+}
+
+// Medium/large idle: a pressure gauge. The ring sits green; a contiguous arc of
+// yellow grows and shrinks sequentially around it, never exceeding half the ring —
+// "nominal, drifting toward slight warning".
+static void animGauge(size_t i) {
+    Anim& a = anim[i];
+    const uint16_t n = segs[i].count;
+    const uint8_t  maxWarn = n / 2;            // never more than half the ring
+    uint32_t now = millis();
+
+    if (now >= a.gaugeNextTarget) {            // drift toward a new level
+        a.gaugeTarget = (uint8_t)random(0, maxWarn + 1);
+        a.gaugeNextTarget = now + random(900, 2600);
+    }
+    if (now - a.gaugeLastStep >= GAUGE_STEP_MS) {   // ease one pixel at a time
+        a.gaugeLastStep = now;
+        if      (a.gaugeLvl < a.gaugeTarget) a.gaugeLvl++;
+        else if (a.gaugeLvl > a.gaugeTarget) a.gaugeLvl--;
+    }
+
+    CRGB* leds = segLeds(i);
+    for (uint16_t p = 0; p < n; p++) leds[p] = (p < a.gaugeLvl) ? GAUGE_WARN : GAUGE_OK;
+}
+
 // Fail ~FAIL_PERCENT% of the boards in EACH set (min 1), chosen at random, so every
 // device has something to repair. Replaces any earlier failure selection.
 static void triggerFailure() {
@@ -341,8 +379,7 @@ static void repairSet(int s) {
 static void renderBoard(size_t i) {
     Anim& a = anim[i];
     if (failed[i]) {                         // failure overrides the set's animation
-        bool on = ((millis() / FAIL_FLASH_MS) & 1) == 0;
-        fill_solid(segLeds(i), segs[i].count, on ? COLOR_BAD : CRGB::Black);
+        animFlash(i, COLOR_BAD, FAIL_FLASH_MS);
         a.wasFailed = true;
         return;
     }
@@ -359,7 +396,11 @@ static void renderBoard(size_t i) {
     const CRGB& active = (st == S_KNOWN) ? COLOR_KNOWN : COLOR_BAD;
     if (segs[i].type == SMALL) {
         if (st == S_DEFAULT) animSmallIdle(i); else animPulse(i, active);
-    } else {                                 // bar / medium / large
+    } else if (segs[i].type == MEDIUM || segs[i].type == LARGE) {
+        if      (st == S_DEFAULT) animGauge(i);                       // pressure gauge
+        else if (st == S_UNKNOWN) animFlash(i, COLOR_BAD, ERROR_FLASH_MS);  // error
+        else                      animComet(i, COLOR_KNOWN);          // known
+    } else {                                 // bar
         if (st == S_DEFAULT) animTwinkle(i); else animComet(i, active);
     }
 }
@@ -412,6 +453,10 @@ void setup() {
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
         anim[i].blinkColor = SMALL_IDLE[random(NUM_SMALL_IDLE)];  // one fixed colour per ring
+        anim[i].gaugeLvl        = (uint8_t)random(segs[i].count / 2 + 1);   // desync gauges
+        anim[i].gaugeTarget     = anim[i].gaugeLvl;
+        anim[i].gaugeNextTarget = millis() + random(300, 1800);
+        anim[i].gaugeLastStep   = 0;
         anim[i].head       = random(segs[i].count);   // desync comets
         anim[i].cometLast  = 0;
     }

@@ -53,15 +53,23 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 ## Behaviour
 
 - **Default (idle):** each small ring blinks on/off as a **single unit in one
-  fixed colour** (white, amber, green or blue, assigned per ring at boot); medium,
-  large and bars run a random per-pixel **twinkle** in **white / red / yellow**;
-  singles blink randomly.
+  fixed colour** (white, amber, green or blue, assigned per ring at boot); **bars**
+  run a random per-pixel **twinkle** in **white / red / yellow**; **medium and
+  large rings run a pressure gauge** (below); singles blink randomly.
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
   and that set latches until changed (`/setN/off` → default):
-  - small rings **pulse** (breathing)
-  - medium/large **comet chase**; bars a **left→right comet sweep**
-  - colour is **blue** (known) / **red** (unknown)
+  - small rings **pulse** (breathing) — blue (known) / red (unknown)
+  - bars a **left→right comet sweep** — blue / red
+  - medium/large: **blue comet chase** on known, **whole ring flashing red** on
+    unknown (the gauge's error reading)
   - singles are decorative only — not part of the set response.
+
+**Pressure gauge (medium/large idle):** the ring sits **green** with a contiguous
+arc of **yellow** growing and shrinking sequentially around it — never more than
+**half** the ring — as levels drift from nominal into slight warning. Each ring
+eases one pixel at a time toward a new random level, and the rings are desynced at
+boot so they don't move in lockstep. Tunables: `GAUGE_OK`, `GAUGE_WARN`,
+`GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
 
 ### Failure mode
 
