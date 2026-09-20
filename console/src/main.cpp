@@ -253,6 +253,8 @@ static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
 static const CRGB     GAUGE_OK       = CRGB(0, 150, 0);     // green  — nominal
 static const CRGB     GAUGE_WARN     = CRGB(255, 190, 0);   // yellow — slight warning
 static const uint16_t GAUGE_STEP_MS  = 110;  // how fast the level sweeps (ms per pixel)
+// Cap on the yellow arc: 3/4 of the ring (a hard stop at 1/2 read oddly in person).
+static inline uint8_t gaugeMax(uint16_t n) { return (uint8_t)(n * 3 / 4); }
 static const uint16_t ERROR_FLASH_MS = 250;  // medium/large unknown-state flash half-period
 
 static const uint8_t  FAIL_PERCENT  = 30;    // ~% of each set's boards that fail
@@ -326,7 +328,7 @@ static void animFlash(size_t i, const CRGB& c, uint16_t halfPeriodMs) {
 static void animGauge(size_t i) {
     Anim& a = anim[i];
     const uint16_t n = segs[i].count;
-    const uint8_t  maxWarn = n / 2;            // never more than half the ring
+    const uint8_t  maxWarn = gaugeMax(n);      // never more than 3/4 of the ring
     uint32_t now = millis();
 
     if (now >= a.gaugeNextTarget) {            // drift toward a new level
@@ -453,7 +455,7 @@ void setup() {
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
         anim[i].blinkColor = SMALL_IDLE[random(NUM_SMALL_IDLE)];  // one fixed colour per ring
-        anim[i].gaugeLvl        = (uint8_t)random(segs[i].count / 2 + 1);   // desync gauges
+        anim[i].gaugeLvl        = (uint8_t)random(gaugeMax(segs[i].count) + 1);  // desync gauges
         anim[i].gaugeTarget     = anim[i].gaugeLvl;
         anim[i].gaugeNextTarget = millis() + random(300, 1800);
         anim[i].gaugeLastStep   = 0;

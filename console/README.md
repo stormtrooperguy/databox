@@ -66,7 +66,8 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 
 **Pressure gauge (medium/large idle):** the ring sits **green** with a contiguous
 arc of **yellow** growing and shrinking sequentially around it — never more than
-**half** the ring — as levels drift from nominal into slight warning. Each ring
+**three-quarters** of the ring — as levels drift from nominal into slight
+warning. Each ring
 eases one pixel at a time toward a new random level, and the rings are desynced at
 boot so they don't move in lockstep. Tunables: `GAUGE_OK`, `GAUGE_WARN`,
 `GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
