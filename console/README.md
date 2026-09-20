@@ -53,7 +53,7 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 ## Behaviour
 
 - **Default (idle):** each small ring blinks on/off as a **single unit in one
-  fixed colour** (white, amber or green, assigned per ring at boot); medium,
+  fixed colour** (white, amber, green or blue, assigned per ring at boot); medium,
   large and bars run a random per-pixel **twinkle** in **white / red / yellow**;
   singles blink randomly.
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
