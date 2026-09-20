@@ -1,6 +1,6 @@
 # databox control console
 
-The ESP32-driven console the portable devices talk to: 442 addressable LEDs
+The ESP32-driven console the portable devices talk to: 388 addressable LEDs
 across **5 panels**, plus 4 plain "single" LEDs. Separate PlatformIO project from
 the portable reader (`../`).
 
@@ -8,7 +8,7 @@ the portable reader (`../`).
 
 | Name | Board | LEDs |
 |---|---|---|
-| `bar` | 10-px strip | 10 |
+| `bar` | 8-px strip | 8 |
 | `small` | 7-px ring | 7 |
 | `medium` | 16-px ring | 16 |
 | `large` | 24-px ring | 24 |
@@ -25,7 +25,7 @@ the portable reader (`../`).
 | 5 | 6 | 1 | – | – | – |
 | **Total** | 27 | 12 | 4 | 1 | 4 |
 
-**44 addressable boards / 442 pixels** (worst-case ~26.5 A →
+**44 addressable boards / 388 pixels** (worst-case ~23.3 A →
 `setMaxPowerInVoltsAndMilliamps(5, 9000)` caps it under the 10 A supply). On
 panels 1 and 5 the last two bars are at the **end of the chain** for easier assembly.
 
@@ -52,8 +52,10 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 
 ## Behaviour
 
-- **Default (idle):** small rings **blink** in random white/amber/green; medium,
-  large, and bars run a colourful random **twinkle**; singles blink randomly.
+- **Default (idle):** each small ring blinks on/off as a **single unit in one
+  fixed colour** (white, amber or green, assigned per ring at boot); medium,
+  large and bars run a random per-pixel **twinkle** in **white / red / yellow**;
+  singles blink randomly.
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
   and that set latches until changed (`/setN/off` → default):
   - small rings **pulse** (breathing)
@@ -102,74 +104,74 @@ order below** — position in the chain is what assigns each board to its set (f
 if you physically reorder, update `BOARDS[]` to match. `LEDs` is the pixel range
 that board occupies in its panel's array.
 
-**Panel 1 — GPIO13 (78 px)**
+**Panel 1 — GPIO13 (68 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
-| 1 | bar | 1 | 0–9 |
-| 2 | bar | 2 | 10–19 |
-| 3 | bar | 3 | 20–29 |
-| 4 | small | 1 | 30–36 |
-| 5 | small | 2 | 37–43 |
-| 6 | small | 3 | 44–50 |
-| 7 | small | 4 | 51–57 |
-| 8 | bar (end of chain) | 5 | 58–67 |
-| 9 | bar (end of chain) | 3 | 68–77 |
+| 1 | bar | 1 | 0–7 |
+| 2 | bar | 2 | 8–15 |
+| 3 | bar | 3 | 16–23 |
+| 4 | small | 1 | 24–30 |
+| 5 | small | 2 | 31–37 |
+| 6 | small | 3 | 38–44 |
+| 7 | small | 4 | 45–51 |
+| 8 | bar (end of chain) | 5 | 52–59 |
+| 9 | bar (end of chain) | 3 | 60–67 |
 
-**Panel 2 — GPIO14 (78 px)**
-
-| # | board | set | LEDs |
-|--|--|--|--|
-| 1 | bar | 4 | 0–9 |
-| 2 | bar | 5 | 10–19 |
-| 3 | bar | 1 | 20–29 |
-| 4 | bar | 2 | 30–39 |
-| 5 | large | 1 | 40–63 |
-| 6 | small | 5 | 64–70 |
-| 7 | small | 4 | 71–77 |
-
-**Panel 3 — GPIO27 (97 px)**
+**Panel 2 — GPIO14 (70 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
-| 1 | bar | 3 | 0–9 |
-| 2 | bar | 4 | 10–19 |
-| 3 | bar | 5 | 20–29 |
-| 4 | bar | 1 | 30–39 |
-| 5 | bar | 2 | 40–49 |
-| 6 | bar | 3 | 50–59 |
-| 7 | medium | 2 | 60–75 |
-| 8 | small | 5 | 76–82 |
-| 9 | small | 1 | 83–89 |
-| 10 | small | 2 | 90–96 |
+| 1 | bar | 4 | 0–7 |
+| 2 | bar | 5 | 8–15 |
+| 3 | bar | 1 | 16–23 |
+| 4 | bar | 2 | 24–31 |
+| 5 | large | 1 | 32–55 |
+| 6 | small | 5 | 56–62 |
+| 7 | small | 4 | 63–69 |
 
-**Panel 4 — GPIO26 (122 px)**
+**Panel 3 — GPIO27 (85 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
-| 1 | bar | 4 | 0–9 |
-| 2 | bar | 5 | 10–19 |
-| 3 | bar | 1 | 20–29 |
-| 4 | bar | 2 | 30–39 |
-| 5 | bar | 3 | 40–49 |
-| 6 | bar | 4 | 50–59 |
-| 7 | medium | 3 | 60–75 |
-| 8 | medium | 4 | 76–91 |
-| 9 | medium | 5 | 92–107 |
-| 10 | small | 3 | 108–114 |
-| 11 | small | 4 | 115–121 |
+| 1 | bar | 3 | 0–7 |
+| 2 | bar | 4 | 8–15 |
+| 3 | bar | 5 | 16–23 |
+| 4 | bar | 1 | 24–31 |
+| 5 | bar | 2 | 32–39 |
+| 6 | bar | 3 | 40–47 |
+| 7 | medium | 2 | 48–63 |
+| 8 | small | 5 | 64–70 |
+| 9 | small | 1 | 71–77 |
+| 10 | small | 2 | 78–84 |
 
-**Panel 5 — GPIO25 (67 px)**
+**Panel 4 — GPIO26 (110 px)**
 
 | # | board | set | LEDs |
 |--|--|--|--|
-| 1 | bar | 5 | 0–9 |
-| 2 | bar | 1 | 10–19 |
-| 3 | bar | 2 | 20–29 |
-| 4 | bar | 3 | 30–39 |
-| 5 | small | 5 | 40–46 |
-| 6 | bar (end of chain) | 4 | 47–56 |
-| 7 | bar (end of chain) | 2 | 57–66 |
+| 1 | bar | 4 | 0–7 |
+| 2 | bar | 5 | 8–15 |
+| 3 | bar | 1 | 16–23 |
+| 4 | bar | 2 | 24–31 |
+| 5 | bar | 3 | 32–39 |
+| 6 | bar | 4 | 40–47 |
+| 7 | medium | 3 | 48–63 |
+| 8 | medium | 4 | 64–79 |
+| 9 | medium | 5 | 80–95 |
+| 10 | small | 3 | 96–102 |
+| 11 | small | 4 | 103–109 |
+
+**Panel 5 — GPIO25 (55 px)**
+
+| # | board | set | LEDs |
+|--|--|--|--|
+| 1 | bar | 5 | 0–7 |
+| 2 | bar | 1 | 8–15 |
+| 3 | bar | 2 | 16–23 |
+| 4 | bar | 3 | 24–31 |
+| 5 | small | 5 | 32–38 |
+| 6 | bar (end of chain) | 4 | 39–46 |
+| 7 | bar (end of chain) | 2 | 47–54 |
 
 **Singles** — 4 plain LEDs, each on its own GPIO (not chained): **16, 17, 18, 19**.
 Decorative random blink; pin↔LED mapping is arbitrary (2 belong in panel 1, 2 in
@@ -185,13 +187,17 @@ Notes:
 
 ## Status
 
-**Feature-complete (untested on hardware).** In place: the board table with set
-assignment, per-panel LED arrays + power cap, WiFi (static IP) +
-`/setN/{known,unknown,off}` endpoints with latched per-set state, the admin
-override page, decorative singles, and the full per-type animations (idle blink/
-twinkle; pulse + comet on known/unknown).
+**Feature-complete.** In place: the board table with set assignment, per-panel
+LED arrays + power cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints
+with latched per-set state, the admin override page, failure mode, decorative
+singles, and the full per-type animations.
 
-- **Data pins are provisional** (`PIN_P1..P5`) — finalise at wiring, then flash
-  and bring-up test with the admin page.
+**Bring-up:** panel 1 wired and verified on hardware; panels 2–5 pending.
+
+- **Bars are 8 px, not 10** — the ordered 10-px strips shipped as 8-px. `ledsFor()`
+  and the panel sizes reflect the as-built hardware. If you ever swap in true 10-px
+  bars, change `ledsFor(BAR)` and the `P*_LEDS` defines together.
+- Pins as built: panels on `GPIO13/14/27/26/25`, singles on `16–19`.
 - Animation tunables live at the top of the Animations section in
-  `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `TWINKLE_FADE`, palettes).
+  `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `TWINKLE_FADE`, `SMALL_IDLE`,
+  `TWINKLE_COLORS`, `FAIL_PERCENT`, `FAIL_FLASH_MS`).

@@ -1,9 +1,9 @@
 // =============================================================================
 //  databox control console  —  ESP32 + addressable-LED panel
 // =============================================================================
-//  The console the portable devices talk to. It has 442 WS2812 pixels across
+//  The console the portable devices talk to. It has 388 WS2812 pixels across
 //  five physical PANELS, made of reusable board types:
-//     bar    = 10-px strip     small = 7-px ring
+//     bar    = 8-px strip      small = 7-px ring
 //     medium = 16-px ring      large = 24-px ring
 //     single = one plain LED (GPIO, not addressable)
 //
@@ -40,7 +40,7 @@ enum BoardType : uint8_t { BAR, SMALL, MEDIUM, LARGE };
 
 static uint16_t ledsFor(BoardType t) {
     switch (t) {
-        case BAR:    return 10;
+        case BAR:    return 8;    // as-built bars are 8 px (ordered 10, received 8)
         case SMALL:  return 7;
         case MEDIUM: return 16;
         case LARGE:  return 24;
@@ -84,11 +84,11 @@ static const size_t NUM_BOARDS = sizeof(BOARDS) / sizeof(BOARDS[0]);
 //  Physical layout — one chain (data pin) per panel. PROVISIONAL pins.
 //  Sizes must match the addressable LED count of each panel's boards.
 // -----------------------------------------------------------------------------
-#define P1_LEDS  78    // 5*10 + 4*7
-#define P2_LEDS  78    // 4*10 + 24 + 2*7
-#define P3_LEDS  97    // 6*10 + 16 + 3*7
-#define P4_LEDS 122    // 6*10 + 3*16 + 2*7
-#define P5_LEDS  67    // 6*10 + 7
+#define P1_LEDS  68    // 5*8 + 4*7
+#define P2_LEDS  70    // 4*8 + 24 + 2*7
+#define P3_LEDS  85    // 6*8 + 16 + 3*7
+#define P4_LEDS 110    // 6*8 + 3*16 + 2*7
+#define P5_LEDS  55    // 6*8 + 7
 
 static CRGB p1[P1_LEDS], p2[P2_LEDS], p3[P3_LEDS], p4[P4_LEDS], p5[P5_LEDS];
 static CRGB* const   PANEL_LEDS[5]  = { p1, p2, p3, p4, p5 };
@@ -240,6 +240,9 @@ static const CRGB COLOR_KNOWN  = CRGB(0, 0, 255);      // blue
 static const CRGB COLOR_BAD    = CRGB(255, 0, 0);      // red
 // small idle blink palette: white / amber / green
 static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0), CRGB(0,150,0) };
+// bar / medium / large idle twinkle palette: white / red / yellow (no rainbow)
+static const CRGB TWINKLE_COLORS[] = { CRGB(255,255,255), CRGB(255,0,0), CRGB(255,200,0) };
+static const uint8_t NUM_TWINKLE_COLORS = sizeof(TWINKLE_COLORS) / sizeof(TWINKLE_COLORS[0]);
 static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
 static const uint8_t  COMET_FADE    = 64;   // comet tail fade per step
 static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
@@ -265,8 +268,7 @@ static void animSmallIdle(size_t i) {
     Anim& a = anim[i];
     uint32_t now = millis();
     if (now >= a.blinkNext) {
-        a.blinkOn = !a.blinkOn;
-        if (a.blinkOn) a.blinkColor = SMALL_IDLE[random(3)];
+        a.blinkOn = !a.blinkOn;   // colour is fixed per ring (assigned at boot)
         a.blinkNext = now + (a.blinkOn ? random(90, 350) : random(150, 700));
     }
     fill_solid(segLeds(i), segs[i].count, a.blinkOn ? a.blinkColor : CRGB::Black);
@@ -284,7 +286,7 @@ static void animPulse(size_t i, const CRGB& base) {
 static void animTwinkle(size_t i) {
     CRGB* leds = segLeds(i);
     fadeToBlackBy(leds, segs[i].count, TWINKLE_FADE);
-    if (random8() < 70) leds[random(segs[i].count)] = CHSV(random8(), 255, 255);
+    if (random8() < 70) leds[random(segs[i].count)] = TWINKLE_COLORS[random(NUM_TWINKLE_COLORS)];
 }
 
 // comet chase in `base`: rings wrap circularly, bars sweep left->right & repeat
@@ -406,7 +408,7 @@ void setup() {
         failed[i]          = false;
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
-        anim[i].blinkColor = SMALL_IDLE[0];
+        anim[i].blinkColor = SMALL_IDLE[random(3)];   // one fixed colour per small ring
         anim[i].head       = random(segs[i].count);   // desync comets
         anim[i].cometLast  = 0;
     }
