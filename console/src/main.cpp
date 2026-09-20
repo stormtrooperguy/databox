@@ -239,7 +239,10 @@ static void connectWifi() {
 static const CRGB COLOR_KNOWN  = CRGB(0, 0, 255);      // blue
 static const CRGB COLOR_BAD    = CRGB(255, 0, 0);      // red
 // small idle blink palette: white / amber / green
-static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0), CRGB(0,150,0) };
+// small-ring idle palette (independent of the bar/ring twinkle palette below)
+static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0),
+                                   CRGB(0,150,0), CRGB(0,70,190) };  // white/amber/green/blue
+static const uint8_t NUM_SMALL_IDLE = sizeof(SMALL_IDLE) / sizeof(SMALL_IDLE[0]);
 // bar / medium / large idle twinkle palette: white / red / yellow (no rainbow)
 static const CRGB TWINKLE_COLORS[] = { CRGB(255,255,255), CRGB(255,0,0), CRGB(255,200,0) };
 static const uint8_t NUM_TWINKLE_COLORS = sizeof(TWINKLE_COLORS) / sizeof(TWINKLE_COLORS[0]);
@@ -408,7 +411,7 @@ void setup() {
         failed[i]          = false;
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
-        anim[i].blinkColor = SMALL_IDLE[random(3)];   // one fixed colour per small ring
+        anim[i].blinkColor = SMALL_IDLE[random(NUM_SMALL_IDLE)];  // one fixed colour per ring
         anim[i].head       = random(segs[i].count);   // desync comets
         anim[i].cometLast  = 0;
     }
