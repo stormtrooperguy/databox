@@ -26,7 +26,8 @@ the portable reader (`../`).
 | **Total** | 27 | 12 | 4 | 1 | 4 |
 
 **44 addressable boards / 388 pixels** (worst-case ~23.3 A →
-`setMaxPowerInVoltsAndMilliamps(5, 13000)` caps draw under the 15 A supply). On
+`setMaxPowerInVoltsAndMilliamps(5, 11000)` caps draw well under the 15 A supply,
+leaving headroom for the ESP32 and for supply sag). On
 panels 1 and 5 the last two bars are at the **end of the chain** for easier assembly.
 
 ## Three independent groupings
@@ -214,7 +215,7 @@ singles, and the full per-type animations.
 
 **Bring-up:** all five panels wired. The old 9 A FastLED cap alone didn't prevent
 ESP32 brownouts under heavy activity — a 15 A supply is on order and the cap is
-now 13 A, so **don't flash this build until that supply is in**. Give the ESP32
+now 11 A, so **don't flash this build until that supply is in**. Give the ESP32
 its own feed rather than tapping a LED chain's rail.
 
 - **Bars are 8 px, not 10** — the ordered 10-px strips shipped as 8-px. `ledsFor()`

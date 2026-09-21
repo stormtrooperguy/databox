@@ -482,7 +482,7 @@ void setup() {
     FastLED.addLeds<WS2812B, PIN_P4, GRB>(p4, P4_LEDS);
     FastLED.addLeds<WS2812B, PIN_P5, GRB>(p5, P5_LEDS);
     FastLED.setBrightness(255);
-    FastLED.setMaxPowerInVoltsAndMilliamps(5, 13000);  // hard cap ~13A on the 15A supply
+    FastLED.setMaxPowerInVoltsAndMilliamps(5, 11000);  // hard cap ~11A on the 15A supply
     FastLED.clear(true);
 
     // Build the segment map: walk boards per panel, accumulating offsets.
