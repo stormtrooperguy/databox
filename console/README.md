@@ -59,7 +59,10 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
   run a **peak-level meter** in their panel's colour (below); **medium and large
   rings run a pressure gauge** (below).
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
-  and that set latches until changed (`/setN/off` → default):
+  and that set latches until changed. Pulling a **known** cartridge (`/setN/off`)
+  returns the set to default; pulling an **unknown** one does **not** — that set
+  stays red until a known cartridge is inserted, so a bad tape leaves a fault
+  behind that has to be repaired:
   - small rings **pulse** (breathing) — blue (known) / red (unknown)
   - bars a **left→right comet sweep** — blue / red
   - medium/large: **blue comet chase** on known, **whole ring flashing red** on
@@ -113,7 +116,9 @@ shares one AP without collisions.
 
 **Admin override:** browse to `http://192.168.50.10/` for an operator page showing
 each set's state with manual **default / known / unknown** controls — for
-forcing a set if a portable malfunctions — plus **trigger failure** and
+forcing a set if a portable malfunctions. The page's **default** button is
+`/setN/default`, an operator override that clears a latched unknown; the devices'
+own `/setN/off` deliberately cannot. Plus **trigger failure** and
 **reset all sets** (`GET`/`POST /reset`, every set back to default in one click;
 it does not clear failures, which repair per set on `/known`).
 (Unauthenticated; local network only.)

@@ -17,7 +17,9 @@
 //  Default mode: small rings blink white/amber/green/blue; bars run a peak-level
 //  meter in their panel's colour; medium/large rings run a pressure gauge.
 //  When a device activates its set (/setN/known|unknown), that set's boards
-//  LATCH to blue (known) / red (unknown) until changed again (/off -> default).
+//  LATCH to blue (known) / red (unknown). Pulling a KNOWN cartridge (/off)
+//  returns the set to default; pulling an UNKNOWN one does not — that fault
+//  stays red until a known cartridge is inserted (or the operator overrides).
 //
 //  FAILURE mode (operator, GET/POST /fail): ~30% of the boards — picked per set,
 //  so every device has something to fix — flash red and override their normal
@@ -136,11 +138,19 @@ static const char* stateName(SetState s) {
     return s == S_KNOWN ? "known" : s == S_UNKNOWN ? "unknown" : "default";
 }
 
-static void applySet(int i, SetState s) {   // latched until changed again
+// Latched until changed again, with one gameplay rule: an UNKNOWN cartridge leaves
+// a fault behind. Pulling it (/off) does NOT clear the red — only a known cartridge
+// does. Pulling a known cartridge returns the set to default as usual.
+// `force` is the operator's override (admin page), which ignores the latch.
+static void applySet(int i, SetState s, bool force = false) {
     if (i < 0 || i > 4) return;
+    if (s == S_DEFAULT && !force && setState[i] == S_UNKNOWN) {
+        Serial.printf("Set %d: off ignored (unknown latched — needs a known cartridge)\n", i + 1);
+        return;
+    }
     setState[i] = s;
     if (s == S_KNOWN) pendingFix[i] = true;  // a known cartridge repairs this set's failures
-    Serial.printf("Set %d -> %s\n", i + 1, stateName(s));
+    Serial.printf("Set %d -> %s%s\n", i + 1, stateName(s), force ? " (operator)" : "");
 }
 
 // Operator override page — shows each set's current state with manual controls.
@@ -169,14 +179,16 @@ static String adminPage() {
     h += "<br><a class='fail' href='/fail'>trigger failure</a>"
          "<a class='reset' href='/reset'>reset everything</a>"
          "<div class='hint'>reset = all sets to default <em>and</em> all failures cleared. "
-         "A set's <b>default</b> button changes state only; <b>known</b> repairs that set.</div></div>";
+         "A set's <b>default</b> button forces state only; <b>known</b> repairs that set. "
+         "An <b>unknown</b> set stays red when its cartridge is pulled &mdash; only a known "
+         "cartridge clears it.</div></div>";
 
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
         h += "<div class='set'>Set " + n + " &mdash; <span class='st'>" + stateName(setState[i]) + "</span>";
         if (failBySet[i]) h += " &mdash; <span class='st bad'>" + String(failBySet[i]) + " failing</span>";
         h += "<br>";
-        h += "<a href='/set" + n + "/off'>default</a>";
+        h += "<a href='/set" + n + "/default'>default</a>";
         h += "<a href='/set" + n + "/known'>known</a>";
         h += "<a href='/set" + n + "/unknown'>unknown</a></div>";
     }
@@ -199,9 +211,15 @@ static void setupWebServer() {
             applySet(i, S_UNKNOWN);
             if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "unknown");
         });
+        // Device endpoint: cartridge removed. Won't clear a latched unknown.
         server.on((b + "/off").c_str(), HTTP_ANY, [i](AsyncWebServerRequest* r) {
             applySet(i, S_DEFAULT);
             if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "off");
+        });
+        // Operator override (admin page): force default even from a latched unknown.
+        server.on((b + "/default").c_str(), HTTP_ANY, [i](AsyncWebServerRequest* r) {
+            applySet(i, S_DEFAULT, true);
+            if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "default");
         });
     }
     // Operator: trigger a failure (GET from the admin page redirects back).
