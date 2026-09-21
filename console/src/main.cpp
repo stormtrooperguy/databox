@@ -156,7 +156,7 @@ static String adminPage() {
                  "h1{font-size:1.15rem}.set{margin:.6rem 0;padding:.5rem .7rem;border:1px solid #333;"
                  "border-radius:6px}.st{font-weight:bold}a{display:inline-block;margin:.3rem .3rem 0 0;"
                  "padding:.3rem .7rem;border-radius:4px;text-decoration:none;color:#fff;background:#333}"
-                 "a.fail{background:#b00020}.bad{color:#ff5252}"
+                 "a.fail{background:#b00020}a.reset{background:#1e6f3c}.bad{color:#ff5252}"
                  "</style></head><body><h1>databox console &mdash; manual override</h1>");
 
     // Failure status: how many boards are flashing red, and per set.
@@ -169,7 +169,8 @@ static String adminPage() {
     if (failTotal) h += "<span class='st bad'>" + String(failTotal) + " of " + String((int)NUM_BOARDS) +
                         " boards flashing red</span> (each set's known cartridge fixes its own)";
     else           h += "<span class='st'>none</span>";
-    h += "<br><a class='fail' href='/fail'>trigger failure</a></div>";
+    h += "<br><a class='fail' href='/fail'>trigger failure</a>"
+         "<a class='reset' href='/reset'>reset all sets</a></div>";
 
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
@@ -209,6 +210,14 @@ static void setupWebServer() {
         pendingFail = true;
         if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "failure triggered");
     });
+    // Operator: put every set back to default in one click. Set state only — any
+    // failed boards keep flashing, since those are repaired per set by a known
+    // cartridge (a set's manual "known" button still clears its own).
+    server.on("/reset", HTTP_ANY, [](AsyncWebServerRequest* r) {
+        for (int i = 0; i < 5; i++) setState[i] = S_DEFAULT;
+        Serial.println("All sets -> default");
+        if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "reset");
+    });
     server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "not found"); });
     server.begin();
 }
@@ -244,12 +253,13 @@ static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0),
                                    CRGB(0,150,0), CRGB(0,70,190) };  // white/amber/green/blue
 static const uint8_t NUM_SMALL_IDLE = sizeof(SMALL_IDLE) / sizeof(SMALL_IDLE[0]);
 // Bar idle = peak-level meter. ONE colour per panel (index 0-4 = panels 1-5);
-// every bar on a panel uses its panel's colour. Edit freely — red/white/yellow.
+// every bar on a panel uses its panel's colour. Edit freely — green/white/yellow
+// (red is deliberately unused here: a red bar at idle reads as a fault).
 static const CRGB PANEL_BAR_COLOR[5] = {
-    CRGB(255,   0, 0),    // panel 1 — red
+    CRGB(  0, 150, 0),    // panel 1 — green
     CRGB(255, 255, 255),  // panel 2 — white
     CRGB(255, 190, 0),    // panel 3 — yellow
-    CRGB(255,   0, 0),    // panel 4 — red
+    CRGB(  0, 150, 0),    // panel 4 — green
     CRGB(255, 190, 0),    // panel 5 — yellow
 };
 static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
@@ -264,9 +274,16 @@ static const uint8_t  VU_BODY_SCALE   = 110;  // meter body brightness vs the pe
 // medium/large "pressure gauge" idle: green ring with a fluctuating yellow arc
 static const CRGB     GAUGE_OK       = CRGB(0, 150, 0);     // green  — nominal
 static const CRGB     GAUGE_WARN     = CRGB(255, 190, 0);   // yellow — slight warning
+static const CRGB     GAUGE_CRIT     = CRGB(255,   0, 0);   // red    — the extreme end
+static const uint8_t  GAUGE_RED_MAX  = 2;    // red pixels past the yellow arc, at most
 static const uint16_t GAUGE_STEP_MS  = 110;  // how fast the level sweeps (ms per pixel)
 // Cap on the yellow arc: 3/4 of the ring (a hard stop at 1/2 read oddly in person).
 static inline uint8_t gaugeMax(uint16_t n) { return (uint8_t)(n * 3 / 4); }
+// Full travel of the needle: the yellow arc plus up to GAUGE_RED_MAX red pixels.
+static inline uint8_t gaugeTop(uint16_t n) {
+    uint16_t t = gaugeMax(n) + GAUGE_RED_MAX;
+    return (uint8_t)(t > n ? n : t);
+}
 static const uint16_t ERROR_FLASH_MS = 250;  // medium/large unknown-state flash half-period
 
 static const uint8_t  FAIL_PERCENT  = 30;    // ~% of each set's boards that fail
@@ -364,16 +381,18 @@ static void animFlash(size_t i, const CRGB& c, uint16_t halfPeriodMs) {
 }
 
 // Medium/large idle: a pressure gauge. The ring sits green; a contiguous arc of
-// yellow grows and shrinks sequentially around it, never exceeding half the ring —
-// "nominal, drifting toward slight warning".
+// yellow grows and shrinks sequentially around it, capped at 3/4 of the ring, and
+// once that fills the needle can push on into up to GAUGE_RED_MAX red pixels —
+// "nominal, drifting toward warning, occasionally into the red".
 static void animGauge(size_t i) {
     Anim& a = anim[i];
     const uint16_t n = segs[i].count;
-    const uint8_t  maxWarn = gaugeMax(n);      // never more than 3/4 of the ring
+    const uint8_t  maxWarn = gaugeMax(n);      // yellow never passes 3/4 of the ring
+    const uint8_t  top     = gaugeTop(n);      // ...beyond which the red tip starts
     uint32_t now = millis();
 
     if (now >= a.gaugeNextTarget) {            // drift toward a new level
-        a.gaugeTarget = (uint8_t)random(0, maxWarn + 1);
+        a.gaugeTarget = (uint8_t)random(0, top + 1);
         a.gaugeNextTarget = now + random(900, 2600);
     }
     if (now - a.gaugeLastStep >= GAUGE_STEP_MS) {   // ease one pixel at a time
@@ -383,7 +402,11 @@ static void animGauge(size_t i) {
     }
 
     CRGB* leds = segLeds(i);
-    for (uint16_t p = 0; p < n; p++) leds[p] = (p < a.gaugeLvl) ? GAUGE_WARN : GAUGE_OK;
+    for (uint16_t p = 0; p < n; p++) {
+        if      (p >= a.gaugeLvl) leds[p] = GAUGE_OK;      // not reached yet
+        else if (p < maxWarn)     leds[p] = GAUGE_WARN;    // the yellow arc
+        else                      leds[p] = GAUGE_CRIT;    // the red tip
+    }
 }
 
 // Fail ~FAIL_PERCENT% of the boards in EACH set (min 1), chosen at random, so every
@@ -497,7 +520,7 @@ void setup() {
         anim[i].blinkOn    = false;
         anim[i].blinkNext  = millis() + random(0, 500);
         anim[i].blinkColor = SMALL_IDLE[random(NUM_SMALL_IDLE)];  // one fixed colour per ring
-        anim[i].gaugeLvl        = (uint8_t)random(gaugeMax(segs[i].count) + 1);  // desync gauges
+        anim[i].gaugeLvl        = (uint8_t)random(gaugeTop(segs[i].count) + 1);  // desync gauges
         anim[i].gaugeTarget     = anim[i].gaugeLvl;
         anim[i].gaugeNextTarget = millis() + random(300, 1800);
         anim[i].gaugeLastStep   = 0;

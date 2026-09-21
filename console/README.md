@@ -26,7 +26,8 @@ the portable reader (`../`).
 | **Total** | 27 | 12 | 4 | 1 | 4 |
 
 **44 addressable boards / 388 pixels** (worst-case ~23.3 A →
-`setMaxPowerInVoltsAndMilliamps(5, 9000)` caps it under the 10 A supply). On
+`setMaxPowerInVoltsAndMilliamps(5, 9000)` caps draw well under the supply; raise
+the cap when the 15 A supply is in). On
 panels 1 and 5 the last two bars are at the **end of the chain** for easier assembly.
 
 ## Three independent groupings
@@ -68,16 +69,18 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 fills from its first pixel with a fast attack and steady decay, with a brighter
 **peak-hold** pixel that hangs at the top then drifts down. Every bar on a panel
 uses **one colour for that whole panel**, set in `PANEL_BAR_COLOR[]` (panels 1–5;
-currently red, white, yellow, red, yellow). Tunables: `VU_STEP_MS`,
+currently green, white, yellow, green, yellow — **red is deliberately not used**,
+since a red bar at idle reads as a fault). Tunables: `VU_STEP_MS`,
 `VU_HIT_CHANCE`, `VU_PEAK_HOLD_MS`, `VU_PEAK_FALL_MS`, `VU_BODY_SCALE`.
 
 **Pressure gauge (medium/large idle):** the ring sits **green** with a contiguous
 arc of **yellow** growing and shrinking sequentially around it — never more than
 **three-quarters** of the ring — as levels drift from nominal into slight
-warning. Each ring
+warning. Once the yellow arc fills, the needle can push on into up to **2 red
+pixels** at the extreme end. Each ring
 eases one pixel at a time toward a new random level, and the rings are desynced at
 boot so they don't move in lockstep. Tunables: `GAUGE_OK`, `GAUGE_WARN`,
-`GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
+`GAUGE_CRIT`, `GAUGE_RED_MAX`, `GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
 
 ### Failure mode
 
@@ -109,7 +112,9 @@ shares one AP without collisions.
 
 **Admin override:** browse to `http://192.168.50.10/` for an operator page showing
 each set's state with manual **default / known / unknown** controls — for
-forcing a set if a portable malfunctions — plus the **trigger failure** link.
+forcing a set if a portable malfunctions — plus **trigger failure** and
+**reset all sets** (`GET`/`POST /reset`, every set back to default in one click;
+it does not clear failures, which repair per set on `/known`).
 (Unauthenticated; local network only.)
 
 ## Wiring guide (recommended chains)
@@ -208,7 +213,9 @@ LED arrays + power cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints
 with latched per-set state, the admin override page, failure mode, decorative
 singles, and the full per-type animations.
 
-**Bring-up:** panel 1 wired and verified on hardware; panels 2–5 pending.
+**Bring-up:** all five panels wired. The 9 A FastLED cap alone didn't prevent
+ESP32 brownouts under heavy activity — a 15 A supply is on order; give the ESP32
+its own feed rather than tapping a LED chain's rail.
 
 - **Bars are 8 px, not 10** — the ordered 10-px strips shipped as 8-px. `ledsFor()`
   and the panel sizes reflect the as-built hardware. If you ever swap in true 10-px
