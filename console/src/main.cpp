@@ -15,7 +15,8 @@
 //                      console, not one panel). Every board belongs to exactly one set.
 //
 //  Default mode: small rings blink white/amber/green; medium, large and bars
-//  twinkle random colours; singles blink randomly. When a device activates its
+//  run a peak-level meter in their panel's colour; medium/large rings run a
+//  pressure gauge; singles blink randomly. When a device activates its
 //  set (/setN/known|unknown), that set's boards LATCH to blue (known) / red
 //  (unknown) until changed again (/off -> back to default). Singles are
 //  decorative only — not part of the set response.
@@ -238,16 +239,27 @@ static void connectWifi() {
 // -----------------------------------------------------------------------------
 static const CRGB COLOR_KNOWN  = CRGB(0, 0, 255);      // blue
 static const CRGB COLOR_BAD    = CRGB(255, 0, 0);      // red
-// small-ring idle palette (independent of the bar/ring twinkle palette below)
+// small-ring idle palette (independent of the per-panel bar colours below)
 static const CRGB SMALL_IDLE[] = { CRGB(130,130,130), CRGB(190,110,0),
                                    CRGB(0,150,0), CRGB(0,70,190) };  // white/amber/green/blue
 static const uint8_t NUM_SMALL_IDLE = sizeof(SMALL_IDLE) / sizeof(SMALL_IDLE[0]);
-// bar / medium / large idle twinkle palette: white / red / yellow (no rainbow)
-static const CRGB TWINKLE_COLORS[] = { CRGB(255,255,255), CRGB(255,0,0), CRGB(255,200,0) };
-static const uint8_t NUM_TWINKLE_COLORS = sizeof(TWINKLE_COLORS) / sizeof(TWINKLE_COLORS[0]);
+// Bar idle = peak-level meter. ONE colour per panel (index 0-4 = panels 1-5);
+// every bar on a panel uses its panel's colour. Edit freely — red/white/yellow.
+static const CRGB PANEL_BAR_COLOR[5] = {
+    CRGB(255,   0, 0),    // panel 1 — red
+    CRGB(255, 255, 255),  // panel 2 — white
+    CRGB(255, 190, 0),    // panel 3 — yellow
+    CRGB(255,   0, 0),    // panel 4 — red
+    CRGB(255, 190, 0),    // panel 5 — yellow
+};
 static const uint16_t COMET_STEP_MS = 60;   // comet advance interval
 static const uint8_t  COMET_FADE    = 64;   // comet tail fade per step
-static const uint8_t  TWINKLE_FADE  = 40;   // idle-flash fade per frame
+// peak-level meter tuning (bar idle)
+static const uint16_t VU_STEP_MS      = 45;   // meter update rate
+static const uint8_t  VU_HIT_CHANCE   = 70;   // 0-255 chance of an attack per step
+static const uint16_t VU_PEAK_HOLD_MS = 400;  // how long the peak pixel hangs at the top
+static const uint16_t VU_PEAK_FALL_MS = 60;   // peak fall rate once it starts dropping
+static const uint8_t  VU_BODY_SCALE   = 110;  // meter body brightness vs the peak pixel
 
 // medium/large "pressure gauge" idle: green ring with a fluctuating yellow arc
 static const CRGB     GAUGE_OK       = CRGB(0, 150, 0);     // green  — nominal
@@ -269,6 +281,10 @@ struct Anim {
     uint8_t  gaugeTarget;      // ...level it is easing toward
     uint32_t gaugeNextTarget;  // when to pick a new target
     uint32_t gaugeLastStep;    // last one-pixel move
+    uint8_t  vuLevel;          // bar meter: lit pixels now
+    uint8_t  vuPeak;           // ...peak-hold pixel
+    uint32_t vuPeakHold;       // when the peak may start falling
+    uint32_t vuLastStep;       // last meter update
     CRGB     blinkColor;
     uint8_t  head;         // comet head position
     uint32_t cometLast;    // comet step timestamp
@@ -296,11 +312,36 @@ static void animPulse(size_t i, const CRGB& base) {
     fill_solid(segLeds(i), segs[i].count, c);
 }
 
-// idle flash: colourful random twinkle (medium/large/bar)
-static void animTwinkle(size_t i) {
+// Bar idle: peak-level meter (see below); medium/large idle: pressure gauge.
+// Bar idle: a stereo peak-level meter. Fills from the first pixel in the panel's
+// colour with a fast attack and steady decay, plus a brighter peak-hold pixel.
+static void animLevelMeter(size_t i, const CRGB& c) {
+    Anim& a = anim[i];
+    const uint16_t n = segs[i].count;
+    uint32_t now = millis();
+
+    if (now - a.vuLastStep >= VU_STEP_MS) {
+        a.vuLastStep = now;
+        if (random8() < VU_HIT_CHANCE) {                  // transient: jump up
+            uint8_t target = (uint8_t)random(1, n + 1);
+            if (target > a.vuLevel) a.vuLevel = target;
+        } else if (a.vuLevel > 0) {
+            a.vuLevel--;                                  // otherwise fall off
+        }
+        if (a.vuLevel >= a.vuPeak) {                      // peak follows up, holds
+            a.vuPeak = a.vuLevel;
+            a.vuPeakHold = now + VU_PEAK_HOLD_MS;
+        } else if (now >= a.vuPeakHold && a.vuPeak > 0) { // ...then drifts down
+            a.vuPeak--;
+            a.vuPeakHold = now + VU_PEAK_FALL_MS;
+        }
+    }
+
+    CRGB body = c;
+    body.nscale8_video(VU_BODY_SCALE);
     CRGB* leds = segLeds(i);
-    fadeToBlackBy(leds, segs[i].count, TWINKLE_FADE);
-    if (random8() < 70) leds[random(segs[i].count)] = TWINKLE_COLORS[random(NUM_TWINKLE_COLORS)];
+    for (uint16_t p = 0; p < n; p++) leds[p] = (p < a.vuLevel) ? body : CRGB::Black;
+    if (a.vuPeak > 0) leds[a.vuPeak - 1] = c;             // peak pixel, full brightness
 }
 
 // comet chase in `base`: rings wrap circularly, bars sweep left->right & repeat
@@ -403,7 +444,8 @@ static void renderBoard(size_t i) {
         else if (st == S_UNKNOWN) animFlash(i, COLOR_BAD, ERROR_FLASH_MS);  // error
         else                      animComet(i, COLOR_KNOWN);          // known
     } else {                                 // bar
-        if (st == S_DEFAULT) animTwinkle(i); else animComet(i, active);
+        if (st == S_DEFAULT) animLevelMeter(i, PANEL_BAR_COLOR[BOARDS[i].panel - 1]);
+        else                 animComet(i, active);
     }
 }
 
@@ -459,6 +501,10 @@ void setup() {
         anim[i].gaugeTarget     = anim[i].gaugeLvl;
         anim[i].gaugeNextTarget = millis() + random(300, 1800);
         anim[i].gaugeLastStep   = 0;
+        anim[i].vuLevel    = (uint8_t)random(segs[i].count + 1);   // desync meters
+        anim[i].vuPeak     = anim[i].vuLevel;
+        anim[i].vuPeakHold = 0;
+        anim[i].vuLastStep = 0;
         anim[i].head       = random(segs[i].count);   // desync comets
         anim[i].cometLast  = 0;
     }

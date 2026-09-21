@@ -54,8 +54,8 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 
 - **Default (idle):** each small ring blinks on/off as a **single unit in one
   fixed colour** (white, amber, green or blue, assigned per ring at boot); **bars**
-  run a random per-pixel **twinkle** in **white / red / yellow**; **medium and
-  large rings run a pressure gauge** (below); singles blink randomly.
+  run a **peak-level meter** in their panel's colour (below); **medium and large
+  rings run a pressure gauge** (below); singles blink randomly.
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
   and that set latches until changed (`/setN/off` → default):
   - small rings **pulse** (breathing) — blue (known) / red (unknown)
@@ -63,6 +63,13 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
   - medium/large: **blue comet chase** on known, **whole ring flashing red** on
     unknown (the gauge's error reading)
   - singles are decorative only — not part of the set response.
+
+**Peak-level meter (bar idle):** each bar behaves like a stereo VU meter — it
+fills from its first pixel with a fast attack and steady decay, with a brighter
+**peak-hold** pixel that hangs at the top then drifts down. Every bar on a panel
+uses **one colour for that whole panel**, set in `PANEL_BAR_COLOR[]` (panels 1–5;
+currently red, white, yellow, red, yellow). Tunables: `VU_STEP_MS`,
+`VU_HIT_CHANCE`, `VU_PEAK_HOLD_MS`, `VU_PEAK_FALL_MS`, `VU_BODY_SCALE`.
 
 **Pressure gauge (medium/large idle):** the ring sits **green** with a contiguous
 arc of **yellow** growing and shrinking sequentially around it — never more than
@@ -208,5 +215,5 @@ singles, and the full per-type animations.
   bars, change `ledsFor(BAR)` and the `P*_LEDS` defines together.
 - Pins as built: panels on `GPIO13/14/27/26/25`, singles on `16–19`.
 - Animation tunables live at the top of the Animations section in
-  `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `TWINKLE_FADE`, `SMALL_IDLE`,
-  `TWINKLE_COLORS`, `FAIL_PERCENT`, `FAIL_FLASH_MS`).
+  `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `SMALL_IDLE`,
+  `FAIL_PERCENT`, `FAIL_FLASH_MS`).
