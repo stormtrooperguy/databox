@@ -275,15 +275,11 @@ static const uint8_t  VU_BODY_SCALE   = 110;  // meter body brightness vs the pe
 static const CRGB     GAUGE_OK       = CRGB(0, 150, 0);     // green  — nominal
 static const CRGB     GAUGE_WARN     = CRGB(255, 190, 0);   // yellow — slight warning
 static const CRGB     GAUGE_CRIT     = CRGB(255,   0, 0);   // red    — the extreme end
-static const uint8_t  GAUGE_RED_MAX  = 2;    // red pixels past the yellow arc, at most
 static const uint16_t GAUGE_STEP_MS  = 110;  // how fast the level sweeps (ms per pixel)
 // Cap on the yellow arc: 3/4 of the ring (a hard stop at 1/2 read oddly in person).
+// Past that the needle runs red, all the way to the last pixel of the ring.
 static inline uint8_t gaugeMax(uint16_t n) { return (uint8_t)(n * 3 / 4); }
-// Full travel of the needle: the yellow arc plus up to GAUGE_RED_MAX red pixels.
-static inline uint8_t gaugeTop(uint16_t n) {
-    uint16_t t = gaugeMax(n) + GAUGE_RED_MAX;
-    return (uint8_t)(t > n ? n : t);
-}
+static inline uint8_t gaugeTop(uint16_t n) { return (uint8_t)n; }   // full travel
 static const uint16_t ERROR_FLASH_MS = 250;  // medium/large unknown-state flash half-period
 
 static const uint8_t  FAIL_PERCENT  = 30;    // ~% of each set's boards that fail
@@ -382,13 +378,13 @@ static void animFlash(size_t i, const CRGB& c, uint16_t halfPeriodMs) {
 
 // Medium/large idle: a pressure gauge. The ring sits green; a contiguous arc of
 // yellow grows and shrinks sequentially around it, capped at 3/4 of the ring, and
-// once that fills the needle can push on into up to GAUGE_RED_MAX red pixels —
-// "nominal, drifting toward warning, occasionally into the red".
+// once that fills the needle runs red through to the last pixel —
+// "nominal, drifting toward warning, occasionally pegged in the red".
 static void animGauge(size_t i) {
     Anim& a = anim[i];
     const uint16_t n = segs[i].count;
     const uint8_t  maxWarn = gaugeMax(n);      // yellow never passes 3/4 of the ring
-    const uint8_t  top     = gaugeTop(n);      // ...beyond which the red tip starts
+    const uint8_t  top     = gaugeTop(n);      // ...beyond which it runs red, to the end
     uint32_t now = millis();
 
     if (now >= a.gaugeNextTarget) {            // drift toward a new level
@@ -486,7 +482,7 @@ void setup() {
     FastLED.addLeds<WS2812B, PIN_P4, GRB>(p4, P4_LEDS);
     FastLED.addLeds<WS2812B, PIN_P5, GRB>(p5, P5_LEDS);
     FastLED.setBrightness(255);
-    FastLED.setMaxPowerInVoltsAndMilliamps(5, 9000);  // hard cap ~9A on the 10A supply
+    FastLED.setMaxPowerInVoltsAndMilliamps(5, 13000);  // hard cap ~13A on the 15A supply
     FastLED.clear(true);
 
     // Build the segment map: walk boards per panel, accumulating offsets.

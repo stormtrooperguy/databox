@@ -26,8 +26,7 @@ the portable reader (`../`).
 | **Total** | 27 | 12 | 4 | 1 | 4 |
 
 **44 addressable boards / 388 pixels** (worst-case ~23.3 A →
-`setMaxPowerInVoltsAndMilliamps(5, 9000)` caps draw well under the supply; raise
-the cap when the 15 A supply is in). On
+`setMaxPowerInVoltsAndMilliamps(5, 13000)` caps draw under the 15 A supply). On
 panels 1 and 5 the last two bars are at the **end of the chain** for easier assembly.
 
 ## Three independent groupings
@@ -76,11 +75,11 @@ since a red bar at idle reads as a fault). Tunables: `VU_STEP_MS`,
 **Pressure gauge (medium/large idle):** the ring sits **green** with a contiguous
 arc of **yellow** growing and shrinking sequentially around it — never more than
 **three-quarters** of the ring — as levels drift from nominal into slight
-warning. Once the yellow arc fills, the needle can push on into up to **2 red
-pixels** at the extreme end. Each ring
+warning. Once the yellow arc fills, the needle runs **red through to the last
+pixel** of the ring (4 red on a medium, 6 on a large). Each ring
 eases one pixel at a time toward a new random level, and the rings are desynced at
 boot so they don't move in lockstep. Tunables: `GAUGE_OK`, `GAUGE_WARN`,
-`GAUGE_CRIT`, `GAUGE_RED_MAX`, `GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
+`GAUGE_CRIT`, `GAUGE_STEP_MS`, `ERROR_FLASH_MS`.
 
 ### Failure mode
 
@@ -213,8 +212,9 @@ LED arrays + power cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints
 with latched per-set state, the admin override page, failure mode, decorative
 singles, and the full per-type animations.
 
-**Bring-up:** all five panels wired. The 9 A FastLED cap alone didn't prevent
-ESP32 brownouts under heavy activity — a 15 A supply is on order; give the ESP32
+**Bring-up:** all five panels wired. The old 9 A FastLED cap alone didn't prevent
+ESP32 brownouts under heavy activity — a 15 A supply is on order and the cap is
+now 13 A, so **don't flash this build until that supply is in**. Give the ESP32
 its own feed rather than tapping a LED chain's rail.
 
 - **Bars are 8 px, not 10** — the ordered 10-px strips shipped as 8-px. `ledsFor()`
