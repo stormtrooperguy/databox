@@ -210,9 +210,11 @@ Most user settings are grouped at the top of [`src/main.cpp`](src/main.cpp):
   way it drives the POC — `<base>/known` or `<base>/unknown` on insert, and
   `<base>/off` on removal (skipped if unset). The error tape reports as
   `/unknown`, so the API sees three modes: **known / unknown / off**.
-- **POC receiver** — `RECEIVER_BASE_URL` (default `http://192.168.50.1`). On each
-  scan the reader hits `/known` (good tape) or `/unknown` (anything else), and
-  `/off` on removal. Set `""` to disable. See [`poc/`](poc/).
+- **Legacy local receiver** — `RECEIVER_BASE_URL`, now `""` (disabled). This used
+  to drive the POC receiver directly at `192.168.50.1`. That unit is the
+  [`beacon/`](beacon/) now and is driven by the **console** from the room's
+  overall state, so readers no longer POST to it. Set a base URL here only to
+  drive some extra device straight from a reader.
 - **Volume** — `AUDIO_VOLUME` (0–30; currently 27 — max distorts a bit).
 - **Good tape** — self-registered at boot and saved to flash; `KNOWN_TAPES[]`
   is only the fallback when none was ever registered. See below.
@@ -321,14 +323,18 @@ driven with raw UART command frames.
 
 ---
 
-## POC receiver (`poc/`)
+## Beacon (`beacon/`)
 
-[`poc/`](poc/) is a separate ESP32 sketch used during testing to demonstrate the
-reader driving an external object **wirelessly**. It hosts the reader's WiFi AP
-at `192.168.50.1` and drives a 16-LED ring: pulsing blue on `/known`, red flashes
-then solid red on `/unknown`, idle orange/yellow glow on `/off`. The reader reaches it because it
-joins that AP (the AP is the reader's configured gateway). It's a sample/demo,
-not part of the shipping device — see [`poc/README.md`](poc/README.md).
+[`beacon/`](beacon/) is a separate ESP32 sketch — a standalone 16-LED ring that
+mirrors the state of the **whole room**: pulsing blue on `/known`, red flashes
+then solid red on `/unknown`, idle orange/yellow glow on `/off`.
+
+It began as the POC receiver that proved a reader could drive an external object
+wirelessly (it used to host the AP at `192.168.50.1`). It is now a **client on
+the venue AP** at a static IP held in NVS, and it is driven by the **console**,
+not by individual readers: the console sends `/unknown` when any set is in error,
+`/known` only when all five sets are known, and `/off` otherwise. Run as many as
+you like — they all show the same state. See [`beacon/README.md`](beacon/README.md).
 
 ---
 
@@ -336,7 +342,7 @@ not part of the shipping device — see [`poc/README.md`](poc/README.md).
 
 - [x] WiFi credentials (`secrets.h`) + static IP.
 - [x] Two-track audio, max volume.
-- [x] POC receiver demo (`poc/`) driven over WiFi.
+- [x] Beacon (`beacon/`) driven over WiFi — now console-driven, room-wide state.
 - [ ] Wire up the real remote API endpoint (`API_URL`) and payload schema.
 - [ ] Catalog the remaining known tapes (only the one good tape is entered;
       everything else is treated as "bad").

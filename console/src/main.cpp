@@ -21,6 +21,11 @@
 //  returns the set to default; pulling an UNKNOWN one does not — that fault
 //  stays red until a known cartridge is inserted (or the operator overrides).
 //
+//  BEACONS: standalone 16-ring units that mirror the state of the whole room.
+//  The console POSTs /unknown to every beacon when ANY set is in error (or a
+//  board has failed), /known when ALL five sets are known, and /off otherwise.
+//  See BEACON_IPS[] and roomState().
+//
 //  FAILURE mode (operator, GET/POST /fail): ~30% of the boards — picked per set,
 //  so every device has something to fix — flash red and override their normal
 //  animation. A board stays failed until its own set receives /known (the matching
@@ -31,6 +36,7 @@
 #include <Arduino.h>
 #include <FastLED.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <ESPAsyncWebServer.h>
 #include "secrets.h"   // WIFI_SSID / WIFI_PASSWORD (git-ignored)
 
@@ -134,6 +140,80 @@ static volatile bool pendingFix[5] = { false, false, false, false, false };  // 
 
 AsyncWebServer server(80);
 
+// -----------------------------------------------------------------------------
+//  Beacons — standalone 16-ring units that mirror the state of the WHOLE room.
+//  The console pushes one state to every beacon whenever the room's state
+//  changes (see roomState() for the rules). Each beacon holds its own static IP
+//  in NVS (`set ip <addr>` over serial), so this list is the only place the
+//  console needs to know about them. Add or remove entries and re-flash.
+// -----------------------------------------------------------------------------
+static const char* BEACON_IPS[] = {
+    "192.168.50.51",
+    // "192.168.50.52",
+    // "192.168.50.53",
+};
+static const size_t NUM_BEACONS = sizeof(BEACON_IPS) / sizeof(BEACON_IPS[0]);
+static const uint16_t BEACON_TIMEOUT_MS = 400;   // keep a dead beacon from stalling us
+
+enum RoomState : uint8_t { ROOM_DEFAULT, ROOM_KNOWN, ROOM_ALERT };
+static QueueHandle_t beaconQueue = NULL;
+
+static const char* roomPath(RoomState r) {
+    return r == ROOM_KNOWN ? "/known" : r == ROOM_ALERT ? "/unknown" : "/off";
+}
+
+// The room's overall state, in priority order:
+//   ALERT   — any set is unknown, OR any board is in failure mode
+//   KNOWN   — all five sets are known (the room has solved it)
+//   DEFAULT — anything else (all idle, or a partial mix of known and idle)
+static RoomState roomState() {
+    for (size_t b = 0; b < NUM_BOARDS; b++) if (failed[b]) return ROOM_ALERT;
+    bool allKnown = true;
+    for (int i = 0; i < 5; i++) {
+        if (setState[i] == S_UNKNOWN) return ROOM_ALERT;
+        if (setState[i] != S_KNOWN)   allKnown = false;
+    }
+    return allKnown ? ROOM_KNOWN : ROOM_DEFAULT;
+}
+
+// Runs off the main loop so a slow or missing beacon never blocks the LEDs.
+static void beaconTask(void*) {
+    RoomState r;
+    for (;;) {
+        if (xQueueReceive(beaconQueue, &r, portMAX_DELAY) != pdTRUE) continue;
+        if (WiFi.status() != WL_CONNECTED) continue;
+        const char* path = roomPath(r);
+        for (size_t i = 0; i < NUM_BEACONS; i++) {
+            WiFiClient client;
+            HTTPClient http;
+            String url = String("http://") + BEACON_IPS[i] + path;
+            http.setConnectTimeout(BEACON_TIMEOUT_MS);
+            http.setTimeout(BEACON_TIMEOUT_MS);
+            if (!http.begin(client, url)) {
+                Serial.printf("Beacon %s: begin failed\n", BEACON_IPS[i]);
+                continue;
+            }
+            int code = http.POST("");
+            if (code > 0) Serial.printf("Beacon %s%s -> %d\n", BEACON_IPS[i], path, code);
+            else          Serial.printf("Beacon %s%s -> FAILED (%s)\n", BEACON_IPS[i], path,
+                                        http.errorToString(code).c_str());
+            http.end();
+        }
+    }
+}
+
+// Push the room state to the beacons when (and only when) it changes.
+static void updateBeacons() {
+    static RoomState last = (RoomState)0xFF;   // != any real state -> sends once at boot
+    RoomState r = roomState();
+    if (r == last) return;
+    last = r;
+    Serial.printf("Room -> %s (beacons: %s)\n",
+                  r == ROOM_KNOWN ? "known" : r == ROOM_ALERT ? "alert" : "default",
+                  roomPath(r));
+    if (beaconQueue) xQueueSend(beaconQueue, &r, 0);
+}
+
 static const char* stateName(SetState s) {
     return s == S_KNOWN ? "known" : s == S_UNKNOWN ? "unknown" : "default";
 }
@@ -182,6 +262,13 @@ static String adminPage() {
          "A set's <b>default</b> button forces state only; <b>known</b> repairs that set. "
          "An <b>unknown</b> set stays red when its cartridge is pulled &mdash; only a known "
          "cartridge clears it.</div></div>";
+
+    // What the beacons are currently being told.
+    RoomState rs = roomState();
+    h += "<div class='set'>Beacons (" + String((unsigned)NUM_BEACONS) + ") &mdash; <span class='st'>";
+    h += rs == ROOM_KNOWN ? "known" : rs == ROOM_ALERT ? "alert" : "default";
+    h += "</span><div class='hint'>alert if any set is unknown or any board failed; "
+         "known only when all five sets are known.</div></div>";
 
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
@@ -548,6 +635,12 @@ void setup() {
 
     connectWifi();
     setupWebServer();
+
+    // Beacon notifier: its own task, so a dead beacon's timeout can't stall the
+    // animations. loop() only ever enqueues a state.
+    beaconQueue = xQueueCreate(8, sizeof(RoomState));
+    xTaskCreatePinnedToCore(beaconTask, "beacons", 4096, NULL, 1, NULL, 0);
+    Serial.printf("Beacons: %u configured\n", (unsigned)NUM_BEACONS);
     Serial.println("HTTP up: /setN/{known,unknown,off} + admin at /");
     Serial.println("Ready (scaffold: default = bring-up by type; known=blue, unknown=red).");
 }
@@ -562,6 +655,9 @@ void loop() {
     for (int s = 0; s < 5; s++) {
         if (pendingFix[s]) { pendingFix[s] = false; repairSet(s); }
     }
+
+    // Mirror the room's overall state out to the beacons (edge-triggered).
+    updateBeacons();
 
     for (size_t i = 0; i < NUM_BOARDS; i++) renderBoard(i);
     FastLED.show();

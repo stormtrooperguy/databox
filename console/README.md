@@ -123,6 +123,28 @@ own `/setN/off` deliberately cannot. Plus **trigger failure** and
 it does not clear failures, which repair per set on `/known`).
 (Unauthenticated; local network only.)
 
+## Beacons
+
+Standalone 16-ring units (see [`../beacon`](../beacon)) that mirror the state of
+the **whole room** rather than one set. The console POSTs to every beacon listed
+in `BEACON_IPS[]` (`src/main.cpp`), and only when the room's state changes:
+
+| Room state | Sent | When |
+|---|---|---|
+| alert | `/unknown` | **any** set is unknown, or **any** board is in failure mode |
+| known | `/known` | **all five** sets are known — the room has solved it |
+| default | `/off` | anything else (all idle, or a partial mix of known and idle) |
+
+Alert takes priority, so a single bad cartridge anywhere turns every beacon red;
+`/known` requires the whole room correct at once. The admin page shows the
+current room state.
+
+Each beacon stores its own static IP in NVS (`set ip <addr>` over serial), so
+they all run the same binary — but the addresses must be listed in
+`BEACON_IPS[]` here for the console to reach them. The POSTs run on their own
+FreeRTOS task with a 400 ms timeout (`BEACON_TIMEOUT_MS`), so a beacon that is
+off or unplugged can never stall the console's animations.
+
 ## Wiring guide (recommended chains)
 
 **One data chain per panel.** Daisy-chain each panel's boards **DIN→DOUT in the

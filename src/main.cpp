@@ -31,9 +31,9 @@
 //  emulate a "thinking" 70s/80s sci-fi computer. At boot the always-on white
 //  LEDs light immediately (power-on cue), the 16-ring fills as a progress bar
 //  while WiFi connects, then the reader LEDs flash green x3 (connected) or red x3
-//  (failed). Each scan's mode (known/unknown/off) is POSTed to both the POC
-//  lantern and this unit's remote API (a base URL set over serial; see
-//  notifyMode / apiUrl).
+//  (failed). Each scan's mode (known/unknown/off) is POSTed to this unit's
+//  endpoint on the control console (a base URL set over serial; see notifyMode /
+//  apiUrl). The room's beacons are driven by the CONSOLE, not from here.
 // =============================================================================
 
 #include <Arduino.h>
@@ -93,10 +93,13 @@
 // "" so an unconfigured unit simply doesn't report. See loadApiUrl().
 static const char* API_URL       = "";   // e.g. "https://example.com/api/scan"
 
-// POC receiver (see poc/): the databox drives that device's 16-LED ring over
-// WiFi by hitting /known, /unknown, /off. It hosts the AP at this address,
-// which is also our configured gateway. Leave empty to disable.
-static const char* RECEIVER_BASE_URL = "http://192.168.50.1";
+// Legacy direct-to-receiver hook. The old POC receiver hosted the AP at
+// 192.168.50.1 and this device drove its ring directly. That unit is now the
+// standalone BEACON (see beacon/), driven by the CONSOLE from the room's
+// overall state — not by individual readers — so this is disabled. 192.168.50.1
+// is the venue router now; POSTing there would just burn a timeout per scan.
+// Set a base URL here only to drive some extra device straight from this unit.
+static const char* RECEIVER_BASE_URL = "";
 
 // DFR1173 volume (0-30)
 static const uint8_t AUDIO_VOLUME = 27;   // ~90% of 30; full volume distorts
@@ -410,7 +413,7 @@ static void notifyMode(const char* base, const char* path) {
 
 // Notify both the POC lantern and this unit's remote API of a mode at once.
 static void notifyBoth(const char* path) {
-    notifyMode(RECEIVER_BASE_URL, path);   // POC lantern (local)
+    notifyMode(RECEIVER_BASE_URL, path);   // legacy local receiver (disabled by default)
     notifyMode(apiUrl.c_str(),    path);   // per-unit remote API
 }
 
