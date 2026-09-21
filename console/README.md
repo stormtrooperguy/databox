@@ -1,7 +1,8 @@
 # databox control console
 
 The ESP32-driven console the portable devices talk to: 388 addressable LEDs
-across **5 panels**, plus 4 plain "single" LEDs. Separate PlatformIO project from
+across **5 panels**, plus 4 plain "single" LEDs wired straight to 5 V (no GPIO,
+no firmware — see below). Separate PlatformIO project from
 the portable reader (`../`).
 
 ## Board types
@@ -12,7 +13,7 @@ the portable reader (`../`).
 | `small` | 7-px ring | 7 |
 | `medium` | 16-px ring | 16 |
 | `large` | 24-px ring | 24 |
-| `single` | plain LED (GPIO) | 1 |
+| `single` | plain LED (hard-wired to 5 V) | 1 |
 
 ## Layout (per panel)
 
@@ -56,14 +57,13 @@ and 2 (panel 5). Change any board's set by editing its row in `BOARDS[]`.
 - **Default (idle):** each small ring blinks on/off as a **single unit in one
   fixed colour** (white, amber, green or blue, assigned per ring at boot); **bars**
   run a **peak-level meter** in their panel's colour (below); **medium and large
-  rings run a pressure gauge** (below); singles blink randomly.
+  rings run a pressure gauge** (below).
 - **Device activation (latched):** a device hits `/setN/known` or `/setN/unknown`
   and that set latches until changed (`/setN/off` → default):
   - small rings **pulse** (breathing) — blue (known) / red (unknown)
   - bars a **left→right comet sweep** — blue / red
   - medium/large: **blue comet chase** on known, **whole ring flashing red** on
     unknown (the gauge's error reading)
-  - singles are decorative only — not part of the set response.
 
 **Peak-level meter (bar idle):** each bar behaves like a stereo VU meter — it
 fills from its first pixel with a fast attack and steady decay, with a brighter
@@ -97,7 +97,8 @@ An operator can trigger a failure from the admin page (**trigger failure**, or
   the rest of their set follows its normal state.
 - If a set's cartridge is already sitting in its device when the failure hits, pull
   it and re-insert it (a fresh `/known` is what repairs).
-- Triggering again re-rolls a fresh selection. Singles aren't part of this.
+- Triggering again re-rolls a fresh selection. Singles aren't part of this (they
+  aren't driven by the ESP32 at all).
 - The admin page shows how many boards are failing, overall and per set.
   Tunables: `FAIL_PERCENT`, `FAIL_FLASH_MS`.
 
@@ -194,9 +195,9 @@ that board occupies in its panel's array.
 | 6 | bar (end of chain) | 4 | 39–46 |
 | 7 | bar (end of chain) | 2 | 47–54 |
 
-**Singles** — 4 plain LEDs, each on its own GPIO (not chained): **16, 17, 18, 19**.
-Decorative random blink; pin↔LED mapping is arbitrary (2 belong in panel 1, 2 in
-panel 3 physically).
+**Singles** — 4 plain LEDs, **wired directly to the 5 V rail** with their own
+series resistors. They are always on, are not connected to the ESP32, and appear
+nowhere in the firmware. Physically 2 sit in panel 1 and 2 in panel 3.
 
 Notes:
 - Only **data + GND** come from the ESP32 pin; feed **5 V power separately** to
@@ -210,18 +211,21 @@ Notes:
 
 **Feature-complete.** In place: the board table with set assignment, per-panel
 LED arrays + power cap, WiFi (static IP) + `/setN/{known,unknown,off}` endpoints
-with latched per-set state, the admin override page, failure mode, decorative
-singles, and the full per-type animations.
+with latched per-set state, the admin override page, failure mode, and the full
+per-type animations.
 
-**Bring-up:** all five panels wired. The old 9 A FastLED cap alone didn't prevent
-ESP32 brownouts under heavy activity — a 15 A supply is on order and the cap is
-now 11 A, so **don't flash this build until that supply is in**. Give the ESP32
-its own feed rather than tapping a LED chain's rail.
+**Bring-up:** all five panels wired and working. Brownouts during heavy activity
+turned out to be **5 V distribution, not supply capacity** — the FastLED cap only
+limits what the LEDs draw, so it can't help when the ESP32 sags on a rail shared
+with a chain. Fixed by giving the ESP32 **its own feed from the supply terminals**
+(star topology); keep it that way. The cap is 11 A on a 15 A supply, which is
+headroom rather than a requirement.
 
 - **Bars are 8 px, not 10** — the ordered 10-px strips shipped as 8-px. `ledsFor()`
   and the panel sizes reflect the as-built hardware. If you ever swap in true 10-px
   bars, change `ledsFor(BAR)` and the `P*_LEDS` defines together.
-- Pins as built: panels on `GPIO13/14/27/26/25`, singles on `16–19`.
+- Pins as built: panels on `GPIO13/14/27/26/25`. `GPIO16–19` are now free — the
+  singles that used them are hard-wired to 5 V.
 - Animation tunables live at the top of the Animations section in
   `src/main.cpp` (`COMET_STEP_MS`, `COMET_FADE`, `SMALL_IDLE`,
   `FAIL_PERCENT`, `FAIL_FLASH_MS`).

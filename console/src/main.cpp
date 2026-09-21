@@ -5,7 +5,7 @@
 //  five physical PANELS, made of reusable board types:
 //     bar    = 8-px strip      small = 7-px ring
 //     medium = 16-px ring      large = 24-px ring
-//     single = one plain LED (GPIO, not addressable)
+//  (The 4 plain "single" LEDs are hard-wired to 5 V — not driven by this board.)
 //
 //  Three INDEPENDENT groupings (see BOARDS[]):
 //     * panel (1-5)  — physical location, metadata only
@@ -14,12 +14,10 @@
 //                      Sets are spread across panels (a device lights the whole
 //                      console, not one panel). Every board belongs to exactly one set.
 //
-//  Default mode: small rings blink white/amber/green; medium, large and bars
-//  run a peak-level meter in their panel's colour; medium/large rings run a
-//  pressure gauge; singles blink randomly. When a device activates its
-//  set (/setN/known|unknown), that set's boards LATCH to blue (known) / red
-//  (unknown) until changed again (/off -> back to default). Singles are
-//  decorative only — not part of the set response.
+//  Default mode: small rings blink white/amber/green/blue; bars run a peak-level
+//  meter in their panel's colour; medium/large rings run a pressure gauge.
+//  When a device activates its set (/setN/known|unknown), that set's boards
+//  LATCH to blue (known) / red (unknown) until changed again (/off -> default).
 //
 //  FAILURE mode (operator, GET/POST /fail): ~30% of the boards — picked per set,
 //  so every device has something to fix — flash red and override their normal
@@ -101,11 +99,8 @@ static const uint16_t PANEL_COUNT[5] = { P1_LEDS, P2_LEDS, P3_LEDS, P4_LEDS, P5_
 #define PIN_P4 26
 #define PIN_P5 25
 
-// Single (plain) LEDs — decorative random blink. 4 total: 2 in P1, 2 in P3.
-static const uint8_t SINGLE_PINS[] = { 16, 17, 18, 19 };
-static const size_t  NUM_SINGLES   = sizeof(SINGLE_PINS) / sizeof(SINGLE_PINS[0]);
-static unsigned long singleNext[NUM_SINGLES];
-static bool          singleOn[NUM_SINGLES];
+// The 4 plain "single" LEDs are wired straight to the 5 V rail as always-on
+// indicators — no GPIO, no code. See the README.
 
 // -----------------------------------------------------------------------------
 //  Runtime segment map: where each board lives in its panel's LED array.
@@ -498,15 +493,9 @@ void setup() {
         Serial.printf("Panel %d: %u/%u LEDs used%s\n", p + 1, poff[p], PANEL_COUNT[p],
                       poff[p] == PANEL_COUNT[p] ? "" : "  <-- MISMATCH!");
     }
-    Serial.printf("Boards: %u addressable + %u singles\n", (unsigned)NUM_BOARDS, (unsigned)NUM_SINGLES);
+    Serial.printf("Boards: %u addressable\n", (unsigned)NUM_BOARDS);
 
-    // Singles.
     randomSeed(analogRead(A0) ^ micros());
-    for (size_t i = 0; i < NUM_SINGLES; i++) {
-        pinMode(SINGLE_PINS[i], OUTPUT);
-        singleOn[i] = false;
-        singleNext[i] = millis() + random(100, 800);
-    }
 
     // Per-board animation state.
     for (size_t i = 0; i < NUM_BOARDS; i++) {
@@ -535,18 +524,8 @@ void setup() {
 }
 
 // -----------------------------------------------------------------------------
-//  Loop  (scaffold render: each board solid by type; singles blink)
+//  Loop
 // -----------------------------------------------------------------------------
-static void updateSingles() {
-    unsigned long now = millis();
-    for (size_t i = 0; i < NUM_SINGLES; i++) {
-        if (now < singleNext[i]) continue;
-        singleOn[i] = !singleOn[i];
-        digitalWrite(SINGLE_PINS[i], singleOn[i] ? HIGH : LOW);
-        singleNext[i] = now + (singleOn[i] ? random(80, 300) : random(150, 900));
-    }
-}
-
 void loop() {
     // Apply requests raised by the HTTP handlers (all LED/failure state is owned here).
     if (pendingFail) { pendingFail = false; triggerFailure(); }
@@ -557,6 +536,5 @@ void loop() {
     for (size_t i = 0; i < NUM_BOARDS; i++) renderBoard(i);
     FastLED.show();
 
-    updateSingles();
     delay(20);
 }
