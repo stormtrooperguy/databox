@@ -107,10 +107,10 @@ static const uint8_t AUDIO_VOLUME = 27;   // ~90% of 30; full volume distorts
 static const uint16_t TRACK_KNOWN = 1;   // known tape
 static const uint16_t TRACK_OTHER = 2;   // unknown or error tape
 
-// The good track plays once; the bad-tape "alarm" (track 2) is replayed so it
-// sounds for longer. BAD_TRACK_MS must be ~the length of track 2 so the plays
+// The good track plays once; the bad-tape "alarm" (track 2) repeats for as long
+// as the tape stays in the slot, so five players holding bad tapes produce five
+// out-of-sync alarms. BAD_TRACK_MS must be ~the length of track 2 so the plays
 // chain back-to-back — set it to your alarm clip's duration.
-static const uint8_t  BAD_TRACK_PLAYS = 5;      // total plays for a bad tape
 // Track 2's file is ~3s but the alarm sound is only ~2s (trailing silence). A
 // new play command preempts the current one, so re-triggering at 1.8s cuts the
 // silence (and slightly overlaps the tail) for a tight, urgent back-to-back alarm.
@@ -221,9 +221,10 @@ static unsigned long lastPoll  = 0;
 static uint8_t       missCount = 0;   // consecutive failed polls while a tape is present
 static bool          readerPresent = false; // PN532 detected at boot; false = RFID disabled
 
-// Bad-tape alarm scheduler (replays TRACK_OTHER a few times from loop()).
-static uint8_t       alarmPlaysLeft = 0;
-static unsigned long alarmLastPlay  = 0;
+// Bad-tape alarm scheduler: loop()s TRACK_OTHER for as long as the bad tape sits
+// in the slot. Cleared by handleRemoval().
+static bool          alarmLooping  = false;
+static unsigned long alarmLastPlay = 0;
 
 // Special (easter-egg) tape state: a non-blocking purple chase runs on the
 // 16-ring for the track duration, driven from loop().
@@ -496,9 +497,9 @@ static void handleTape(const uint8_t* uid, uint8_t len) {
     playInsertionAnimation(finalColor);
     setReaderLeds(ledGreen, ledRed);
     audioPlayTrack(track);
-    // Good track plays once; a bad tape queues extra replays so the alarm lasts.
-    alarmPlaysLeft = (cls == CLASS_KNOWN) ? 0 : (BAD_TRACK_PLAYS - 1);
-    alarmLastPlay  = millis();
+    // Good track plays once; a bad tape keeps re-triggering the alarm until it's pulled.
+    alarmLooping  = (cls != CLASS_KNOWN);
+    alarmLastPlay = millis();
 
     // Notify the POC lantern and the remote API: /known for a good tape,
     // /unknown for anything else (the error tape maps to unknown too).
@@ -509,7 +510,7 @@ static void handleRemoval() {
     setReaderLeds(false, false);
     fill_solid(ring16, RING16_COUNT, CRGB::Black);
     FastLED.show();
-    alarmPlaysLeft = 0;   // cancel any pending alarm replays
+    alarmLooping = false;   // silence the alarm the moment the tape is pulled
 
     if (presentIsSpecial) {
         // Easter-egg tape: end the chase + track, and make NO API call.
@@ -829,11 +830,10 @@ void loop() {
     updateThinkingRings();
     FastLED.show();
 
-    // Bad-tape alarm: replay TRACK_OTHER a few times so it sounds for longer.
-    if (alarmPlaysLeft > 0 && millis() - alarmLastPlay >= BAD_TRACK_MS) {
+    // Bad-tape alarm: re-trigger TRACK_OTHER indefinitely while the tape is in.
+    if (alarmLooping && millis() - alarmLastPlay >= BAD_TRACK_MS) {
         audioPlayTrack(TRACK_OTHER);
         alarmLastPlay = millis();
-        alarmPlaysLeft--;
     }
 
     // Special tape: advance the non-blocking purple chase for the track duration.

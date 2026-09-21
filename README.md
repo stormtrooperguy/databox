@@ -27,6 +27,12 @@ Sequence on insertion of a **known / unknown / error** tape:
 4. Once the ring settles, the **reader LED lights** (green/red) and the
    **matching audio track plays**.
 
+A known tape plays track 1 **once**. An unknown or error tape **repeats the alarm
+(track 2) for as long as the cartridge stays in the slot**, and goes silent the
+moment it's pulled — several players holding bad tapes produce overlapping,
+out-of-sync alarms. `BAD_TRACK_MS` is the re-trigger interval; set it to roughly
+the alarm clip's length so the plays chain back-to-back.
+
 A **special** tape skips that sequence: it plays its own track and runs a
 **purple comet chase** on the 16-ring for as long as the track plays (synced via
 the DFR1173 BUSY pin), with the reader LEDs dark and no API call. See
