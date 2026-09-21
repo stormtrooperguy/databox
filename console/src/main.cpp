@@ -127,6 +127,7 @@ static volatile SetState setState[5] = { S_DEFAULT, S_DEFAULT, S_DEFAULT, S_DEFA
 // The web handlers only raise the request flags below; loop() does the work.
 static volatile bool failed[NUM_BOARDS];
 static volatile bool pendingFail = false;         // operator hit /fail
+static volatile bool pendingReset = false;        // operator hit /reset
 static volatile bool pendingFix[5] = { false, false, false, false, false };  // set got /known
 
 AsyncWebServer server(80);
@@ -152,6 +153,7 @@ static String adminPage() {
                  "border-radius:6px}.st{font-weight:bold}a{display:inline-block;margin:.3rem .3rem 0 0;"
                  "padding:.3rem .7rem;border-radius:4px;text-decoration:none;color:#fff;background:#333}"
                  "a.fail{background:#b00020}a.reset{background:#1e6f3c}.bad{color:#ff5252}"
+                 ".hint{margin-top:.5rem;font-size:.8rem;color:#999}"
                  "</style></head><body><h1>databox console &mdash; manual override</h1>");
 
     // Failure status: how many boards are flashing red, and per set.
@@ -165,7 +167,9 @@ static String adminPage() {
                         " boards flashing red</span> (each set's known cartridge fixes its own)";
     else           h += "<span class='st'>none</span>";
     h += "<br><a class='fail' href='/fail'>trigger failure</a>"
-         "<a class='reset' href='/reset'>reset all sets</a></div>";
+         "<a class='reset' href='/reset'>reset everything</a>"
+         "<div class='hint'>reset = all sets to default <em>and</em> all failures cleared. "
+         "A set's <b>default</b> button changes state only; <b>known</b> repairs that set.</div></div>";
 
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
@@ -205,12 +209,12 @@ static void setupWebServer() {
         pendingFail = true;
         if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "failure triggered");
     });
-    // Operator: put every set back to default in one click. Set state only — any
-    // failed boards keep flashing, since those are repaired per set by a known
-    // cartridge (a set's manual "known" button still clears its own).
+    // Operator: full reset in one click — every set back to default AND every
+    // failure cleared. This is the escape hatch from failure mode; the DEVICE
+    // endpoints still only repair on /known, one set at a time.
     server.on("/reset", HTTP_ANY, [](AsyncWebServerRequest* r) {
         for (int i = 0; i < 5; i++) setState[i] = S_DEFAULT;
-        Serial.println("All sets -> default");
+        pendingReset = true;      // loop() owns failed[]
         if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "reset");
     });
     server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "not found"); });
@@ -423,6 +427,13 @@ static void triggerFailure() {
                   (unsigned)total, (unsigned)NUM_BOARDS);
 }
 
+// Operator reset: clear every failure at once (admin page only).
+static void clearAllFailures() {
+    unsigned cleared = 0;
+    for (size_t b = 0; b < NUM_BOARDS; b++) if (failed[b]) { failed[b] = false; cleared++; }
+    Serial.printf("RESET: all sets -> default, %u failed board(s) cleared\n", cleared);
+}
+
 // A known cartridge on set `s` (0-4) repairs that set's failed boards.
 static void repairSet(int s) {
     unsigned fixed = 0;
@@ -528,7 +539,8 @@ void setup() {
 // -----------------------------------------------------------------------------
 void loop() {
     // Apply requests raised by the HTTP handlers (all LED/failure state is owned here).
-    if (pendingFail) { pendingFail = false; triggerFailure(); }
+    if (pendingFail)  { pendingFail  = false; triggerFailure(); }
+    if (pendingReset) { pendingReset = false; clearAllFailures(); }
     for (int s = 0; s < 5; s++) {
         if (pendingFix[s]) { pendingFix[s] = false; repairSet(s); }
     }
