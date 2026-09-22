@@ -149,11 +149,20 @@ AsyncWebServer server(80);
 // -----------------------------------------------------------------------------
 static const char* BEACON_IPS[] = {
     "192.168.50.51",
-    // "192.168.50.52",
-    // "192.168.50.53",
+    "192.168.50.52",   // not built yet
+    "192.168.50.53",   // not built yet
+    "192.168.50.54",   // not built yet
 };
 static const size_t NUM_BEACONS = sizeof(BEACON_IPS) / sizeof(BEACON_IPS[0]);
 static const uint16_t BEACON_TIMEOUT_MS = 400;   // keep a dead beacon from stalling us
+
+// Listing beacons that don't exist yet is free: after BEACON_FAIL_LIMIT
+// consecutive failures a beacon is skipped entirely until BEACON_RETRY_MS has
+// passed, so absent units cost one timeout every 30s instead of one per change.
+static const uint8_t  BEACON_FAIL_LIMIT = 3;
+static const uint32_t BEACON_RETRY_MS   = 30000;
+static uint8_t  beaconFails[NUM_BEACONS];
+static uint32_t beaconNextTry[NUM_BEACONS];
 
 enum RoomState : uint8_t { ROOM_DEFAULT, ROOM_KNOWN, ROOM_ALERT };
 static QueueHandle_t beaconQueue = NULL;
@@ -181,9 +190,18 @@ static void beaconTask(void*) {
     RoomState r;
     for (;;) {
         if (xQueueReceive(beaconQueue, &r, portMAX_DELAY) != pdTRUE) continue;
+        // Coalesce: if the room changed again while we were sending, only the
+        // newest state matters — never walk the list for a state already stale.
+        RoomState newer;
+        while (xQueueReceive(beaconQueue, &newer, 0) == pdTRUE) r = newer;
+
         if (WiFi.status() != WL_CONNECTED) continue;
         const char* path = roomPath(r);
+        uint32_t now = millis();
         for (size_t i = 0; i < NUM_BEACONS; i++) {
+            // Skip a beacon that has been failing, until its retry window opens.
+            if (beaconFails[i] >= BEACON_FAIL_LIMIT && (int32_t)(now - beaconNextTry[i]) < 0) continue;
+
             WiFiClient client;
             HTTPClient http;
             String url = String("http://") + BEACON_IPS[i] + path;
@@ -194,9 +212,21 @@ static void beaconTask(void*) {
                 continue;
             }
             int code = http.POST("");
-            if (code > 0) Serial.printf("Beacon %s%s -> %d\n", BEACON_IPS[i], path, code);
-            else          Serial.printf("Beacon %s%s -> FAILED (%s)\n", BEACON_IPS[i], path,
-                                        http.errorToString(code).c_str());
+            if (code > 0) {
+                if (beaconFails[i] >= BEACON_FAIL_LIMIT)
+                    Serial.printf("Beacon %s: back online\n", BEACON_IPS[i]);
+                beaconFails[i] = 0;
+                Serial.printf("Beacon %s%s -> %d\n", BEACON_IPS[i], path, code);
+            } else {
+                if (beaconFails[i] < BEACON_FAIL_LIMIT) beaconFails[i]++;
+                beaconNextTry[i] = millis() + BEACON_RETRY_MS;
+                if (beaconFails[i] < BEACON_FAIL_LIMIT)
+                    Serial.printf("Beacon %s%s -> FAILED (%s)\n", BEACON_IPS[i], path,
+                                  http.errorToString(code).c_str());
+                else if (beaconFails[i] == BEACON_FAIL_LIMIT)
+                    Serial.printf("Beacon %s: unreachable, backing off %us\n",
+                                  BEACON_IPS[i], (unsigned)(BEACON_RETRY_MS / 1000));
+            }
             http.end();
         }
     }
@@ -638,6 +668,7 @@ void setup() {
 
     // Beacon notifier: its own task, so a dead beacon's timeout can't stall the
     // animations. loop() only ever enqueues a state.
+    for (size_t i = 0; i < NUM_BEACONS; i++) { beaconFails[i] = 0; beaconNextTry[i] = 0; }
     beaconQueue = xQueueCreate(8, sizeof(RoomState));
     xTaskCreatePinnedToCore(beaconTask, "beacons", 4096, NULL, 1, NULL, 0);
     Serial.printf("Beacons: %u configured\n", (unsigned)NUM_BEACONS);

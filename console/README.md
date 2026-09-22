@@ -145,6 +145,14 @@ they all run the same binary — but the addresses must be listed in
 FreeRTOS task with a 400 ms timeout (`BEACON_TIMEOUT_MS`), so a beacon that is
 off or unplugged can never stall the console's animations.
 
+**Listing beacons that don't exist yet is fine.** After `BEACON_FAIL_LIMIT` (3)
+consecutive failures a beacon is skipped until `BEACON_RETRY_MS` (30 s) has
+passed, so unbuilt or powered-down units cost one timeout every 30 s rather than
+one per state change — and they rejoin automatically once they answer. The task
+also coalesces queued states, so it never sends a state that is already stale.
+
+As built: `.51` exists; `.52`–`.54` are placeholders for beacons not yet made.
+
 ## Wiring guide (recommended chains)
 
 **One data chain per panel.** Daisy-chain each panel's boards **DIN→DOUT in the
