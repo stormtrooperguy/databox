@@ -41,6 +41,29 @@ The console decides the room's state and POSTs it to every beacon in its
 Alert wins over everything, so one bad cartridge anywhere lights every beacon
 red. `/known` needs the whole room correct at once.
 
+## Wiring
+
+One 16-LED WS2812B ring, nothing else:
+
+| Ring | ESP32 | Notes |
+|---|---|---|
+| `DIN` | **GPIO13** | `PIN_RING16` in `src/main.cpp` |
+| `GND` | `GND` | must be common with whatever powers the ring |
+| `5V` | `5V` / external | see below |
+
+Data goes to the ring's **DIN** end — a WS2812B ring is directional, and wiring
+into `DOUT` gives you a dark ring with no error to explain it.
+
+**Power.** 16 pixels is ~960 mA at full white, more than a USB port or the
+board's regulator should be asked for. The beacon never runs full white, though:
+the idle glow is capped around 2/3 brightness on one or two channels and the
+alert is pure red, so real draw stays a few hundred mA. Off USB for bench work
+that is fine. For anything permanent, feed the ring from a 5 V supply and tie its
+ground to the ESP32's.
+
+If you change the pin, update `PIN_RING16` — avoid GPIO6–11 (flash), and the
+input-only pins 34–39 can't drive data.
+
 ## Configuring a unit
 
 Connect over serial (115200) and use the config console:
