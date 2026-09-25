@@ -15,17 +15,24 @@ every beacon whenever that state changes.
 - Sits at a **static IP stored in NVS**, set over serial — so every beacon runs
   the *same binary* and is addressed individually after flashing. With no IP
   configured it falls back to **DHCP** and prints the address it received.
-- Drives a single **16-LED WS2812B ring** on **GPIO13** (no other hardware).
+- Drives a single **40-px WS2812B ring/strip** on **GPIO13** (no other hardware).
 - Exposes three HTTP endpoints (**GET or POST**):
 
-  | Endpoint   | Effect                                             |
-  |------------|----------------------------------------------------|
-  | `/known`   | LEDs pulse through shades of blue                  |
-  | `/unknown` | Flash red 6 times, then hold solid red             |
-  | `/off`     | Return to idle — LEDs pulse through orange/yellow  |
+  | Endpoint   | Effect                   | Rate |
+  |------------|--------------------------|------|
+  | `/off`     | idle — **green** breath  | 20 BPM |
+  | `/known`   | **blue** breath          | 30 BPM |
+  | `/unknown` | alert — **red** breath   | 50 BPM |
 
-- Starts up in **idle** (pulsing orange/yellow). The light patterns are
-  unchanged from the POC.
+All three modes are the *same shape* — a full-ring breath between a dim floor and
+full brightness — and differ only in colour and rate. The tempo carries the
+urgency, so the state reads at a glance from across the room without having to
+catch a transition. Starts up in **idle**.
+
+Tunables sit together near the top of `src/main.cpp`: `IDLE_HUE` / `IDLE_BPM` /
+`IDLE_MIN_V` / `IDLE_MAX_V` and the matching `ALERT_*` set. Lower `ALERT_MIN_V`
+toward 0 for a harder throb; it is deliberately 60 so the alert never drops to
+near-dark between beats and instead stays a continuous red presence.
 
 ## What the console sends
 
@@ -43,25 +50,27 @@ red. `/known` needs the whole room correct at once.
 
 ## Wiring
 
-One 16-LED WS2812B ring, nothing else:
+One 40-px WS2812B ring/strip, nothing else:
 
 | Ring | ESP32 | Notes |
 |---|---|---|
-| `DIN` | **GPIO13** | `PIN_RING16` in `src/main.cpp` |
+| `DIN` | **GPIO13** | `PIN_RING` in `src/main.cpp` |
 | `GND` | `GND` | must be common with whatever powers the ring |
 | `5V` | `5V` / external | see below |
 
 Data goes to the ring's **DIN** end — a WS2812B ring is directional, and wiring
 into `DOUT` gives you a dark ring with no error to explain it.
 
-**Power.** 16 pixels is ~960 mA at full white, more than a USB port or the
-board's regulator should be asked for. The beacon never runs full white, though:
-the idle glow is capped around 2/3 brightness on one or two channels and the
-alert is pure red, so real draw stays a few hundred mA. Off USB for bench work
-that is fine. For anything permanent, feed the ring from a 5 V supply and tie its
-ground to the ESP32's.
+**Power.** Every mode peaks at full brightness on a single colour channel, so the
+worst case is **~840 mA** (40 px × 20 mA, plus ~1 mA each of quiescent draw) —
+about 42% of a 2 A supply. Full white would be 2.4 A, but the beacon never
+renders it.
 
-If you change the pin, update `PIN_RING16` — avoid GPIO6–11 (flash), and the
+That 840 mA is **above a USB port's 500 mA**, so judge brightness on the real
+supply: on USB you may see dimming or a brownout that says nothing about the
+finished build. Feed the ring from a 5 V supply and tie its ground to the ESP32's.
+
+If you change the pin, update `PIN_RING` — avoid GPIO6–11 (flash), and the
 input-only pins 34–39 can't drive data.
 
 ## Configuring a unit

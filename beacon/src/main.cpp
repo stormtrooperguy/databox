@@ -16,11 +16,11 @@
 //    - Takes a STATIC IP stored in NVS so each unit can be addressed without
 //      recompiling: set it over serial with `set ip 192.168.50.51`. With no IP
 //      configured it falls back to DHCP and prints the address it got.
-//    - Drives a single 16-LED WS2812B ring (no other hardware).
+//    - Drives a single 40-px WS2812B ring/strip (no other hardware).
 //    - Exposes the same three endpoints (GET or POST):
 //        /known    -> LEDs pulse through shades of blue
-//        /unknown  -> flash red 6 times, then hold solid red
-//        /off      -> return to idle (LEDs pulse through orange/yellow)
+//        /unknown  -> urgent red breath
+//        /off      -> return to idle (slow green pulse)
 //
 //  Springtrap lesson: the async HTTP handlers NEVER touch FastLED. They just
 //  enqueue the requested mode; loop() drains the queue and owns every LED op,
@@ -37,8 +37,8 @@
 // -----------------------------------------------------------------------------
 //  Hardware
 // -----------------------------------------------------------------------------
-#define PIN_RING16   13
-#define NUM_LEDS     16
+#define PIN_RING     13
+#define NUM_LEDS     40
 static CRGB ring[NUM_LEDS];
 
 // -----------------------------------------------------------------------------
@@ -65,13 +65,19 @@ static Mode currentMode = MODE_IDLE;
 // HTTP handlers (async task) enqueue a mode; loop() applies it.
 static QueueHandle_t modeQueue = NULL;
 
-// Unknown-mode flash state (owned by loop()).
-static const uint8_t  UNKNOWN_FLASHES  = 6;
-static const uint32_t UNKNOWN_FLASH_MS  = 120;
-static bool     unkFlashing = false;
-static bool     unkOn       = false;
-static uint8_t  unkCount    = 0;
-static uint32_t unkLast     = 0;
+// Idle glow: a slow green pulse. Hue 96 is FastLED's pure green; drop toward 85
+// for a yellower green, up toward 110 for a cooler one.
+static const uint8_t IDLE_HUE   = 96;
+static const uint8_t IDLE_BPM   = 20;   // pulse rate
+static const uint8_t IDLE_MIN_V = 25;   // dimmest point of the breath
+static const uint8_t IDLE_MAX_V = 255;  // brightest point
+
+// Unknown mode: an urgent red breath — deliberately faster than the idle pulse
+// so the room reads it as agitation.
+static const uint8_t  ALERT_HUE   = 0;    // red
+static const uint8_t  ALERT_BPM   = 50;   // vs IDLE_BPM 20 — noticeably quicker
+static const uint8_t  ALERT_MIN_V = 60;   // never fully dark; it stays a red presence
+static const uint8_t  ALERT_MAX_V = 255;
 
 // -----------------------------------------------------------------------------
 //  Stored config (NVS)
@@ -159,29 +165,21 @@ static void applyMode(Mode m) {
     currentMode = m;
     switch (m) {
         case MODE_IDLE:
-            Serial.println("Mode: IDLE (pulsing orange/yellow)");
+            Serial.println("Mode: IDLE (green pulse)");
             break;   // animated continuously in updateIdle()
         case MODE_KNOWN:
             Serial.println("Mode: KNOWN (pulsing blue)");
             break;   // animated continuously in updateKnown()
         case MODE_UNKNOWN:
-            unkFlashing = true;
-            unkOn       = true;
-            unkCount    = 0;
-            unkLast     = millis();
-            fill_solid(ring, NUM_LEDS, CRGB::Red);
-            FastLED.show();
-            Serial.println("Mode: UNKNOWN (flash x6 then solid red)");
-            break;
+            Serial.println("Mode: UNKNOWN (red breath)");
+            break;   // animated continuously in updateUnknown()
     }
 }
 
 static void updateIdle() {
-    // Gentle idle lantern glow: hue drifts orange -> yellow while brightness
-    // breathes slowly.
-    uint8_t v = beatsin8(20, 25, 170);    // slow, moderate brightness
-    uint8_t h = beatsin8(10, 24, 64);     // orange (24) -> yellow (64)
-    fill_solid(ring, NUM_LEDS, CHSV(h, 255, v));
+    // Gentle idle glow: a slow green pulse — the room is calm and nominal.
+    uint8_t v = beatsin8(IDLE_BPM, IDLE_MIN_V, IDLE_MAX_V);
+    fill_solid(ring, NUM_LEDS, CHSV(IDLE_HUE, 255, v));
     FastLED.show();
 }
 
@@ -195,19 +193,9 @@ static void updateKnown() {
 }
 
 static void updateUnknown() {
-    if (!unkFlashing) return;                       // holding solid red
-    if (millis() - unkLast < UNKNOWN_FLASH_MS) return;
-    unkLast = millis();
-    unkOn = !unkOn;
-    if (unkOn) {
-        fill_solid(ring, NUM_LEDS, CRGB::Red);
-    } else {
-        fill_solid(ring, NUM_LEDS, CRGB::Black);
-        if (++unkCount >= UNKNOWN_FLASHES) {
-            unkFlashing = false;
-            fill_solid(ring, NUM_LEDS, CRGB::Red);  // settle on solid red
-        }
-    }
+    // Urgent red breath — same shape as the idle pulse, just faster and red.
+    uint8_t v = beatsin8(ALERT_BPM, ALERT_MIN_V, ALERT_MAX_V);
+    fill_solid(ring, NUM_LEDS, CHSV(ALERT_HUE, 255, v));
     FastLED.show();
 }
 
@@ -281,7 +269,7 @@ void setup() {
     delay(200);
     Serial.println("\ndatabox beacon booting...");
 
-    FastLED.addLeds<WS2812B, PIN_RING16, GRB>(ring, NUM_LEDS);
+    FastLED.addLeds<WS2812B, PIN_RING, GRB>(ring, NUM_LEDS);
     FastLED.setBrightness(255);
     fill_solid(ring, NUM_LEDS, CRGB::Black);   // idle glow takes over in loop()
     FastLED.show();

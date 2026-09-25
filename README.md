@@ -325,9 +325,10 @@ driven with raw UART command frames.
 
 ## Beacon (`beacon/`)
 
-[`beacon/`](beacon/) is a separate ESP32 sketch — a standalone 16-LED ring that
-mirrors the state of the **whole room**: pulsing blue on `/known`, red flashes
-then solid red on `/unknown`, idle orange/yellow glow on `/off`.
+[`beacon/`](beacon/) is a separate ESP32 sketch — a standalone 40-px ring that
+mirrors the state of the **whole room** with a full-ring breath whose colour and
+tempo carry the state: **green** at 20 BPM idle (`/off`), **blue** at 30 BPM on
+`/known`, **red** at 50 BPM on `/unknown`.
 
 It began as the POC receiver that proved a reader could drive an external object
 wirelessly (it used to host the AP at `192.168.50.1`). It is now a **client on
