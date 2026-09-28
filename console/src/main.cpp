@@ -287,7 +287,8 @@ static const char ADMIN_CSS[] PROGMEM =
     "body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;"
     "padding:1rem;background:var(--bg);color:var(--amber)}"
     ".wrap{max-width:760px;margin:0 auto}"
-    "h1{font-size:1rem;letter-spacing:.35em;margin:0;text-transform:uppercase}"
+    "h1{font-size:.95rem;letter-spacing:.2em;margin:0;text-transform:uppercase;line-height:1.5}"
+    "h1 .ship{color:var(--amber)}h1 .sys{color:var(--dim)}"
     ".sub{font-size:.65rem;letter-spacing:.25em;color:var(--dim);margin:.35rem 0 1rem;"
     "text-transform:uppercase}"
     ".panel{border:1px solid var(--line);background:var(--panel);padding:.7rem .85rem;"
@@ -315,10 +316,11 @@ static const char ADMIN_CSS[] PROGMEM =
 static String adminPage() {
     String h = F("<!doctype html><html><head>"
                  "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                 "<meta http-equiv='refresh' content='3'><title>DATABOX CONTROL</title>");
+                 "<meta http-equiv='refresh' content='3'><title>CSL AURORA</title>");
     h += FPSTR(ADMIN_CSS);
     h += F("</head><body><div class='scan'></div><div class='wrap'>"
-           "<h1>Databox Control</h1>"
+           "<h1><span class='ship'>CSL Aurora</span> "
+           "<span class='sys'>&mdash; Engineering Control System</span></h1>"
            "<div class='sub'>Diagnostic Override &middot; Restricted Access</div>");
 
     // Failure status: how many boards are flashing red, and per set.
