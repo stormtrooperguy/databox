@@ -271,6 +271,13 @@ static const char* opStateName(SetState s) {
     return s == S_KNOWN ? "repaired" : s == S_UNKNOWN ? "failed" : "standby";
 }
 
+// Ship-system names for the five sets — flavour only. Which name lands on which
+// set doesn't matter; the set number is kept alongside so an operator can still
+// tie a panel to a specific portable when troubleshooting.
+static const char* SET_NAMES[5] = {
+    "Weapons", "Loaders", "Cargo", "Ship Integrity", "Shields"
+};
+
 // All inline — the venue AP has no internet, so no external fonts or CSS.
 static const char ADMIN_CSS[] PROGMEM =
     "<style>"
@@ -323,7 +330,7 @@ static String adminPage() {
     h += String("<div class='panel") + (failTotal ? " alert" : "") + "'>"
          "<span class='lbl'>System Integrity</span>";
     if (failTotal) h += "<span class='st bad blink'>" + String(failTotal) + " / " +
-                        String((int)NUM_BOARDS) + " boards failed</span>";
+                        String((int)NUM_BOARDS) + " system failures</span>";
     else           h += "<span class='st ok'>All systems nominal</span>";
     h += F("<a class='red' href='/fail'>induce fault</a>"
            "<a class='grn' href='/reset'>full reset</a>"
@@ -335,7 +342,7 @@ static String adminPage() {
     // Beacons: what they're being told, plus manual relay.
     RoomState rs = roomState();
     h += String("<div class='panel") + (rs == ROOM_ALERT ? " alert" : "") + "'>"
-         "<span class='lbl'>Beacon Array &middot; " + String((unsigned)NUM_BEACONS) + " units</span>"
+         "<span class='lbl'>Alarm Systems &middot; " + String((unsigned)NUM_BEACONS) + " units</span>"
          "<span class='st " + (rs == ROOM_ALERT ? "bad" : rs == ROOM_KNOWN ? "rep" : "") + "'>" +
          (rs == ROOM_ALERT ? "failed" : rs == ROOM_KNOWN ? "repaired" : "standby") + "</span>"
          "<a class='red' href='/beacons/unknown'>failed</a>"
@@ -351,7 +358,7 @@ static String adminPage() {
         String n = String(i + 1);
         SetState st = setState[i];
         h += "<div class='panel" + String(failBySet[i] ? " alert" : "") + "'>"
-             "<span class='lbl'>Set " + n + "</span>"
+             "<span class='lbl'>" + SET_NAMES[i] + " &middot; Set " + n + "</span>"
              "<span class='st " + (st == S_UNKNOWN ? "bad" : st == S_KNOWN ? "rep" : "") + "'>" +
              opStateName(st) + "</span>";
         if (failBySet[i]) h += "<span class='lbl bad'>" + String(failBySet[i]) + " boards faulted</span>";
