@@ -328,15 +328,15 @@ static String adminPage() {
         if (failed[b]) { failTotal++; failBySet[segs[b].set - 1]++; }
     }
     h += String("<div class='panel") + (failTotal ? " alert" : "") + "'>"
-         "<span class='lbl'>System Integrity</span>";
+         "<span class='lbl'>Overall Status</span>";
     if (failTotal) h += "<span class='st bad blink'>" + String(failTotal) + " / " +
                         String((int)NUM_BOARDS) + " system failures</span>";
     else           h += "<span class='st ok'>All systems nominal</span>";
     h += F("<a class='red' href='/fail'>induce fault</a>"
            "<a class='grn' href='/reset'>full reset</a>"
-           "<div class='hint'>Full reset returns every set to standby and clears all faults. "
-           "A set's <b>standby</b> button forces its state only; <b>repaired</b> clears that "
-           "set's faults. A <b>failed</b> set stays red when its cartridge is pulled &mdash; "
+           "<div class='hint'>Full reset returns every control bank to standby and clears all faults. "
+           "A bank's <b>standby</b> button forces its state only; <b>repaired</b> clears that "
+           "bank's faults. A <b>failed</b> bank stays red when its cartridge is pulled &mdash; "
            "only the matching cartridge clears it.</div></div>");
 
     // Beacons: what they're being told, plus manual relay.
@@ -349,8 +349,8 @@ static String adminPage() {
          "<a class='blu' href='/beacons/known'>repaired</a>"
          "<a href='/beacons/off'>standby</a>"
          "<a class='grn' href='/beacons/sync'>resync</a>"
-         "<div class='hint'>The array follows the room automatically: <b>failed</b> if any set "
-         "is failed or any board is faulted, <b>repaired</b> only when all five sets are repaired, "
+         "<div class='hint'>The array follows the room automatically: <b>failed</b> if any bank "
+         "is failed or any system is faulted, <b>repaired</b> only when all five banks are repaired, "
          "otherwise standby. The buttons above override that until the room state next changes; "
          "<b>resync</b> re-sends the state shown here.</div></div>";
 
@@ -358,10 +358,10 @@ static String adminPage() {
         String n = String(i + 1);
         SetState st = setState[i];
         h += "<div class='panel" + String(failBySet[i] ? " alert" : "") + "'>"
-             "<span class='lbl'>" + SET_NAMES[i] + " &middot; Set " + n + "</span>"
+             "<span class='lbl'>" + SET_NAMES[i] + " &middot; Control Bank " + n + "</span>"
              "<span class='st " + (st == S_UNKNOWN ? "bad" : st == S_KNOWN ? "rep" : "") + "'>" +
              opStateName(st) + "</span>";
-        if (failBySet[i]) h += "<span class='lbl bad'>" + String(failBySet[i]) + " boards faulted</span>";
+        if (failBySet[i]) h += "<span class='lbl bad'>" + String(failBySet[i]) + " systems faulted</span>";
         h += "<a href='/set" + n + "/default'>standby</a>"
              "<a class='blu' href='/set" + n + "/known'>repaired</a>"
              "<a class='red' href='/set" + n + "/unknown'>failed</a></div>";
