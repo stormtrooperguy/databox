@@ -114,14 +114,37 @@ and POSTs `/known` `/unknown` `/off`. WiFi credentials live in git-ignored
 `src/secrets.h`. The portable devices are on **DHCP** (clients), so the fleet
 shares one AP without collisions.
 
-**Admin override:** browse to `http://192.168.50.10/` for an operator page showing
-each set's state with manual **default / known / unknown** controls — for
-forcing a set if a portable malfunctions. The page's **default** button is
-`/setN/default`, an operator override that clears a latched unknown; the devices'
-own `/setN/off` deliberately cannot. Plus **trigger failure** and
-**reset all sets** (`GET`/`POST /reset`, every set back to default in one click;
-it does not clear failures, which repair per set on `/known`).
-(Unauthenticated; local network only.)
+**Admin override:** browse to `http://192.168.50.10/` for the operator page — one
+place to drive every set, the fault state and the beacon array during an activity.
+(Unauthenticated; local network only. All styling is inline: the venue AP has no
+internet, so the page must never reference an external font or stylesheet.)
+
+**Operator vocabulary.** The endpoints keep their `known` / `unknown` names — the
+portables call them — but the buttons read in the operator's language, so a
+less-experienced operator isn't translating under pressure:
+
+| Button | Endpoint | Meaning |
+|---|---|---|
+| standby | `/setN/default` | idle; operator override that clears a latched fault |
+| repaired | `/setN/known` | as if the matching cartridge was inserted |
+| failed | `/setN/unknown` | as if a wrong cartridge was inserted |
+| induce fault | `/fail` | roll a fresh ~30% failure across all sets |
+| full reset | `/reset` | every set to standby **and** all faults cleared |
+
+The page's **standby** button is `/setN/default`, an operator override that
+clears a latched failure; the devices' own `/setN/off` deliberately cannot.
+
+**Beacon relay.** The array normally follows the room on its own, but the page
+can drive it directly for a rehearsal or a stuck unit:
+
+| Button | Endpoint | Effect |
+|---|---|---|
+| failed / repaired / standby | `/beacons/{unknown,known,off}` | push that state to every beacon |
+| resync | `/beacons/sync` | re-send the room's real state |
+
+Because the automatic mirror is edge-triggered, a manual override **stands until
+the room's state actually changes** — then the console reasserts it. `resync`
+puts things back immediately without waiting for a change.
 
 ## Beacons
 

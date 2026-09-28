@@ -264,17 +264,55 @@ static void applySet(int i, SetState s, bool force = false) {
 }
 
 // Operator override page — shows each set's current state with manual controls.
+// Operator-facing labels. The ENDPOINTS keep their known/unknown names (the
+// portables call them), but the buttons read in the operator's language:
+// a set is "repaired" or "failed", not "known" or "unknown".
+static const char* opStateName(SetState s) {
+    return s == S_KNOWN ? "repaired" : s == S_UNKNOWN ? "failed" : "standby";
+}
+
+// All inline — the venue AP has no internet, so no external fonts or CSS.
+static const char ADMIN_CSS[] PROGMEM =
+    "<style>"
+    ":root{--amber:#ffb02e;--dim:#8a6a2f;--bg:#06070a;--panel:#0d1016;--line:#23303f;"
+    "--red:#ff4545;--blue:#4da6ff;--grn:#3ad07a}"
+    "*{box-sizing:border-box}"
+    "body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;"
+    "padding:1rem;background:var(--bg);color:var(--amber)}"
+    ".wrap{max-width:760px;margin:0 auto}"
+    "h1{font-size:1rem;letter-spacing:.35em;margin:0;text-transform:uppercase}"
+    ".sub{font-size:.65rem;letter-spacing:.25em;color:var(--dim);margin:.35rem 0 1rem;"
+    "text-transform:uppercase}"
+    ".panel{border:1px solid var(--line);background:var(--panel);padding:.7rem .85rem;"
+    "margin:.55rem 0;position:relative}"
+    ".panel:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}"
+    ".panel.alert:before{background:var(--red)}"
+    ".lbl{font-size:.62rem;letter-spacing:.25em;color:var(--dim);text-transform:uppercase}"
+    ".st{font-size:.95rem;letter-spacing:.2em;text-transform:uppercase;display:block;margin-top:.15rem}"
+    ".ok{color:var(--grn)}.bad{color:var(--red)}.rep{color:var(--blue)}"
+    "a{display:inline-block;margin:.45rem .35rem 0 0;padding:.4rem .85rem;font:inherit;"
+    "font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;text-decoration:none;"
+    "color:var(--amber);border:1px solid var(--line);background:#141922}"
+    "a:hover{border-color:var(--amber)}"
+    "a.red{color:var(--red);border-color:#5c2020}"
+    "a.grn{color:var(--grn);border-color:#1e4a33}"
+    "a.blu{color:var(--blue);border-color:#1e3c5c}"
+    ".hint{margin-top:.55rem;font-size:.63rem;letter-spacing:.04em;color:#6b7784;"
+    "text-transform:none;line-height:1.6}"
+    ".foot{margin-top:1.1rem;font-size:.58rem;letter-spacing:.2em;color:#3d4a57;text-transform:uppercase}"
+    ".scan{position:fixed;inset:0;pointer-events:none;z-index:9;"
+    "background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px)}"
+    "@keyframes bl{50%{opacity:.3}}.blink{animation:bl 1.1s steps(1,end) infinite}"
+    "</style>";
+
 static String adminPage() {
     String h = F("<!doctype html><html><head>"
                  "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                 "<meta http-equiv='refresh' content='3'><title>databox console</title>"
-                 "<style>body{font-family:sans-serif;margin:1.2rem;background:#111;color:#eee}"
-                 "h1{font-size:1.15rem}.set{margin:.6rem 0;padding:.5rem .7rem;border:1px solid #333;"
-                 "border-radius:6px}.st{font-weight:bold}a{display:inline-block;margin:.3rem .3rem 0 0;"
-                 "padding:.3rem .7rem;border-radius:4px;text-decoration:none;color:#fff;background:#333}"
-                 "a.fail{background:#b00020}a.reset{background:#1e6f3c}.bad{color:#ff5252}"
-                 ".hint{margin-top:.5rem;font-size:.8rem;color:#999}"
-                 "</style></head><body><h1>databox console &mdash; manual override</h1>");
+                 "<meta http-equiv='refresh' content='3'><title>DATABOX CONTROL</title>");
+    h += FPSTR(ADMIN_CSS);
+    h += F("</head><body><div class='scan'></div><div class='wrap'>"
+           "<h1>Databox Control</h1>"
+           "<div class='sub'>Diagnostic Override &middot; Restricted Access</div>");
 
     // Failure status: how many boards are flashing red, and per set.
     int failBySet[5] = { 0, 0, 0, 0, 0 };
@@ -282,34 +320,49 @@ static String adminPage() {
     for (size_t b = 0; b < NUM_BOARDS; b++) {
         if (failed[b]) { failTotal++; failBySet[segs[b].set - 1]++; }
     }
-    h += "<div class='set'>Failure &mdash; ";
-    if (failTotal) h += "<span class='st bad'>" + String(failTotal) + " of " + String((int)NUM_BOARDS) +
-                        " boards flashing red</span> (each set's known cartridge fixes its own)";
-    else           h += "<span class='st'>none</span>";
-    h += "<br><a class='fail' href='/fail'>trigger failure</a>"
-         "<a class='reset' href='/reset'>reset everything</a>"
-         "<div class='hint'>reset = all sets to default <em>and</em> all failures cleared. "
-         "A set's <b>default</b> button forces state only; <b>known</b> repairs that set. "
-         "An <b>unknown</b> set stays red when its cartridge is pulled &mdash; only a known "
-         "cartridge clears it.</div></div>";
+    h += String("<div class='panel") + (failTotal ? " alert" : "") + "'>"
+         "<span class='lbl'>System Integrity</span>";
+    if (failTotal) h += "<span class='st bad blink'>" + String(failTotal) + " / " +
+                        String((int)NUM_BOARDS) + " boards failed</span>";
+    else           h += "<span class='st ok'>All systems nominal</span>";
+    h += F("<a class='red' href='/fail'>induce fault</a>"
+           "<a class='grn' href='/reset'>full reset</a>"
+           "<div class='hint'>Full reset returns every set to standby and clears all faults. "
+           "A set's <b>standby</b> button forces its state only; <b>repaired</b> clears that "
+           "set's faults. A <b>failed</b> set stays red when its cartridge is pulled &mdash; "
+           "only the matching cartridge clears it.</div></div>");
 
-    // What the beacons are currently being told.
+    // Beacons: what they're being told, plus manual relay.
     RoomState rs = roomState();
-    h += "<div class='set'>Beacons (" + String((unsigned)NUM_BEACONS) + ") &mdash; <span class='st'>";
-    h += rs == ROOM_KNOWN ? "known" : rs == ROOM_ALERT ? "alert" : "default";
-    h += "</span><div class='hint'>alert if any set is unknown or any board failed; "
-         "known only when all five sets are known.</div></div>";
+    h += String("<div class='panel") + (rs == ROOM_ALERT ? " alert" : "") + "'>"
+         "<span class='lbl'>Beacon Array &middot; " + String((unsigned)NUM_BEACONS) + " units</span>"
+         "<span class='st " + (rs == ROOM_ALERT ? "bad" : rs == ROOM_KNOWN ? "rep" : "") + "'>" +
+         (rs == ROOM_ALERT ? "failed" : rs == ROOM_KNOWN ? "repaired" : "standby") + "</span>"
+         "<a class='red' href='/beacons/unknown'>failed</a>"
+         "<a class='blu' href='/beacons/known'>repaired</a>"
+         "<a href='/beacons/off'>standby</a>"
+         "<a class='grn' href='/beacons/sync'>resync</a>"
+         "<div class='hint'>The array follows the room automatically: <b>failed</b> if any set "
+         "is failed or any board is faulted, <b>repaired</b> only when all five sets are repaired, "
+         "otherwise standby. The buttons above override that until the room state next changes; "
+         "<b>resync</b> re-sends the state shown here.</div></div>";
 
     for (int i = 0; i < 5; i++) {
         String n = String(i + 1);
-        h += "<div class='set'>Set " + n + " &mdash; <span class='st'>" + stateName(setState[i]) + "</span>";
-        if (failBySet[i]) h += " &mdash; <span class='st bad'>" + String(failBySet[i]) + " failing</span>";
-        h += "<br>";
-        h += "<a href='/set" + n + "/default'>default</a>";
-        h += "<a href='/set" + n + "/known'>known</a>";
-        h += "<a href='/set" + n + "/unknown'>unknown</a></div>";
+        SetState st = setState[i];
+        h += "<div class='panel" + String(failBySet[i] ? " alert" : "") + "'>"
+             "<span class='lbl'>Set " + n + "</span>"
+             "<span class='st " + (st == S_UNKNOWN ? "bad" : st == S_KNOWN ? "rep" : "") + "'>" +
+             opStateName(st) + "</span>";
+        if (failBySet[i]) h += "<span class='lbl bad'>" + String(failBySet[i]) + " boards faulted</span>";
+        h += "<a href='/set" + n + "/default'>standby</a>"
+             "<a class='blu' href='/set" + n + "/known'>repaired</a>"
+             "<a class='red' href='/set" + n + "/unknown'>failed</a></div>";
     }
-    h += F("</body></html>");
+
+    h += "<div class='foot'>Node " + WiFi.localIP().toString() + " &middot; " +
+         String((unsigned)NUM_BOARDS) + " boards &middot; link nominal</div>";
+    h += F("</div></body></html>");
     return h;
 }
 
@@ -352,6 +405,30 @@ static void setupWebServer() {
         pendingReset = true;      // loop() owns failed[]
         if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", "reset");
     });
+    // Operator: drive the beacon array by hand. The automatic mirror in
+    // updateBeacons() is edge-triggered, so an override stands until the room's
+    // state actually changes; /beacons/sync re-asserts the real state.
+    struct BeaconRoute { const char* path; RoomState state; };
+    static const BeaconRoute BEACON_ROUTES[] = {
+        { "/beacons/known",   ROOM_KNOWN   },
+        { "/beacons/unknown", ROOM_ALERT   },
+        { "/beacons/off",     ROOM_DEFAULT },
+    };
+    for (const BeaconRoute& br : BEACON_ROUTES) {
+        RoomState s = br.state;
+        server.on(br.path, HTTP_ANY, [s](AsyncWebServerRequest* r) {
+            if (beaconQueue) xQueueSend(beaconQueue, &s, 0);
+            Serial.printf("Beacons <- operator: %s\n", roomPath(s));
+            if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", roomPath(s));
+        });
+    }
+    server.on("/beacons/sync", HTTP_ANY, [](AsyncWebServerRequest* r) {
+        RoomState s = roomState();
+        if (beaconQueue) xQueueSend(beaconQueue, &s, 0);
+        Serial.printf("Beacons <- resync: %s\n", roomPath(s));
+        if (r->method() == HTTP_GET) r->redirect("/"); else r->send(200, "text/plain", roomPath(s));
+    });
+
     server.onNotFound([](AsyncWebServerRequest* r) { r->send(404, "text/plain", "not found"); });
     server.begin();
 }
